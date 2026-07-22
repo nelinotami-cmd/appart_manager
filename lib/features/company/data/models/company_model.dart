@@ -8,6 +8,7 @@ class CompanyModel extends Company {
   const CompanyModel({
     required super.id,
     required super.name,
+    required super.contactName,
     required super.contactEmail,
     required super.contactPhone,
     required super.address,
@@ -23,6 +24,7 @@ class CompanyModel extends Company {
     return CompanyModel(
       id: map[r'$id'] as String,
       name: map[CompanyAttributes.name] as String,
+      contactName: map[CompanyAttributes.contactName] as String? ?? '',
       contactEmail: map[CompanyAttributes.contactEmail] as String,
       contactPhone: map[CompanyAttributes.contactPhone] as String,
       address: map[CompanyAttributes.address] as String,
@@ -37,6 +39,7 @@ class CompanyModel extends Company {
   /// Appwrite-managed fields like `$id`/`$createdAt`).
   Map<String, dynamic> toCreateMap() => {
         CompanyAttributes.name: name,
+        CompanyAttributes.contactName: contactName,
         CompanyAttributes.contactEmail: contactEmail,
         CompanyAttributes.contactPhone: contactPhone,
         CompanyAttributes.address: address,

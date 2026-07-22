@@ -4,6 +4,12 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../core/theme/app_theme.dart';
 
+// Re-exported so pages that import this file for `AuthShell` keep getting
+// `AuthInlineAlert` too, without touching every existing import - the
+// alert itself moved to `core/widgets/inline_alert.dart` as the generic
+// `AppInlineAlert` once Company/Subscription needed it too.
+export '../../../../core/widgets/inline_alert.dart';
+
 /// Shared page chrome for every Auth screen: centered card on the
 /// `AppColors.background` canvas, brand mark above it, optional footer
 /// slot below (e.g. "Don't have an account? Sign up").
@@ -87,44 +93,6 @@ class _BrandMark extends StatelessWidget {
         const SizedBox(height: AppSpacing.md),
         Text('Appartements ERP', style: AppTextStyles.headlineMd),
       ],
-    );
-  }
-}
-
-/// Inline alert banner (`DESIGN.md` "Feedback > Inline Alerts") - soft
-/// background tint placed directly above the relevant content. Used to
-/// surface `Failure.message` from `AuthState` without mapping it to any
-/// particular form field (the backend doesn't report field-level errors).
-class AuthInlineAlert extends StatelessWidget {
-  final String message;
-  final bool isError;
-
-  const AuthInlineAlert({super.key, required this.message, this.isError = true});
-
-  @override
-  Widget build(BuildContext context) {
-    final bg = isError ? AppColors.errorContainer : AppColors.successContainer;
-    final fg = isError ? AppColors.onErrorContainer : AppColors.onSuccessContainer;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-      margin: const EdgeInsets.only(bottom: AppSpacing.md),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(AppRadius.standard),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            isError ? Icons.error_outline : Icons.check_circle_outline,
-            size: 18,
-            color: fg,
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(child: Text(message, style: AppTextStyles.bodySm.copyWith(color: fg))),
-        ],
-      ),
     );
   }
 }

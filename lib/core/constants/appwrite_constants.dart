@@ -18,9 +18,19 @@ class CompanyAttributes {
   CompanyAttributes._();
 
   static const String name = 'name';
+  static const String contactName = 'contactName';
   static const String contactEmail = 'contactEmail';
   static const String contactPhone = 'contactPhone';
   static const String address = 'address';
   static const String status = 'status';
   static const String subscriptionPlanId = 'subscriptionPlanId';
+}
+
+class SubscriptionPlanAttributes {
+  SubscriptionPlanAttributes._();
+
+  static const String name = 'name';
+  static const String description = 'description';
+  static const String monthlyPrice = 'monthlyPrice';
+  static const String enabledFeatures = 'enabledFeatures';
 }

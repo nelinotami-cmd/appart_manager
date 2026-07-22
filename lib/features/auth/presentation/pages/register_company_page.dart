@@ -7,11 +7,11 @@ import '../../../../core/theme/app_theme.dart';
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
 import '../bloc/auth_state.dart';
-import '../widgets/app_primary_button.dart';
-import '../widgets/app_secondary_button.dart';
-import '../widgets/app_text_field.dart';
+import '../../../../core/widgets/app_primary_button.dart';
+import '../../../../core/widgets/app_secondary_button.dart';
+import '../../../../core/widgets/app_text_field.dart';
 import '../widgets/auth_shell.dart';
-import 'temporary_authenticated_home_page.dart';
+import '../../../../core/navigation/app_shell.dart';
 
 enum _RegisterStep { company, admin, security }
 
@@ -136,7 +136,7 @@ class _RegisterCompanyPageState extends State<RegisterCompanyPage> {
       listener: (context, state) {
         if (state.isAuthenticated) {
           Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (_) => const TemporaryAuthenticatedHomePage()),
+            MaterialPageRoute(builder: (_) => const AppShell()),
             (route) => false,
           );
         }

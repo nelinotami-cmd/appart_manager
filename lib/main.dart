@@ -6,12 +6,14 @@ import 'package:path_provider/path_provider.dart';
 
 import 'core/di/service_locator.dart';
 import 'core/env/env_config.dart';
+import 'core/navigation/app_shell.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/presentation/bloc/auth_bloc.dart';
 import 'features/auth/presentation/bloc/auth_event.dart';
 import 'features/auth/presentation/bloc/auth_state.dart';
 import 'features/auth/presentation/pages/login_page.dart';
-import 'features/auth/presentation/pages/temporary_authenticated_home_page.dart';
+import 'features/company/presentation/bloc/company_bloc.dart';
+import 'features/subscription/presentation/bloc/subscription_bloc.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -54,8 +56,10 @@ class AppartementsErpApp extends StatelessWidget {
         BlocProvider<AuthBloc>(
           create: (_) => sl<AuthBloc>()..add(const AuthCheckRequested()),
         ),
+        BlocProvider<CompanyBloc>(create: (_) => sl<CompanyBloc>()),
+        BlocProvider<SubscriptionBloc>(create: (_) => sl<SubscriptionBloc>()),
         // Additional feature Blocs are registered here as they are
-        // generated (company, subscriptions, locations, meubles, ...).
+        // generated (locations, meubles, ...).
       ],
       child: MaterialApp(
         title: 'Appartements ERP',
@@ -83,7 +87,7 @@ class _AuthGate extends StatelessWidget {
       buildWhen: (previous, current) => previous.status != current.status,
       builder: (context, state) {
         return switch (state.status) {
-          AuthStatus.authenticated => const TemporaryAuthenticatedHomePage(),
+          AuthStatus.authenticated => const AppShell(),
           AuthStatus.unauthenticated || AuthStatus.error => const LoginPage(),
           AuthStatus.initial || AuthStatus.loading => const _SplashScreen(),
         };

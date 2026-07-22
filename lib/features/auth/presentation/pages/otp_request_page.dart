@@ -6,8 +6,8 @@ import '../../../../core/theme/app_theme.dart';
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
 import '../bloc/auth_state.dart';
-import '../widgets/app_primary_button.dart';
-import '../widgets/app_text_field.dart';
+import '../../../../core/widgets/app_primary_button.dart';
+import '../../../../core/widgets/app_text_field.dart';
 import '../widgets/auth_shell.dart';
 import 'otp_verify_reset_password_page.dart';
 

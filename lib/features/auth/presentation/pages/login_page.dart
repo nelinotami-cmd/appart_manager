@@ -6,12 +6,12 @@ import '../../../../core/theme/app_theme.dart';
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
 import '../bloc/auth_state.dart';
-import '../widgets/app_primary_button.dart';
-import '../widgets/app_text_field.dart';
+import '../../../../core/widgets/app_primary_button.dart';
+import '../../../../core/widgets/app_text_field.dart';
 import '../widgets/auth_shell.dart';
 import 'otp_request_page.dart';
 import 'register_company_page.dart';
-import 'temporary_authenticated_home_page.dart';
+import '../../../../core/navigation/app_shell.dart';
 
 /// Matches the reference `login_screen` mockup: brand mark, "Email or
 /// Phone" + "Password" fields, primary Login button, "Forgot password?"
@@ -59,7 +59,7 @@ class _LoginPageState extends State<LoginPage> {
       listener: (context, state) {
         if (state.isAuthenticated) {
           Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (_) => const TemporaryAuthenticatedHomePage()),
+            MaterialPageRoute(builder: (_) => const AppShell()),
             (route) => false,
           );
         }

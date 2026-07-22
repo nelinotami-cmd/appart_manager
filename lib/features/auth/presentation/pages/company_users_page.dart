@@ -11,27 +11,32 @@ import '../bloc/auth_event.dart';
 import '../bloc/auth_state.dart';
 import 'create_gestionnaire_page.dart';
 
-/// Admin-only page: list/search Gestionnaires of the current company,
+/// Admin-only content: list/search Gestionnaires of the current company,
 /// with realtime updates (cahier des charges 5.7).
 ///
+/// Hosted inside `AppShell` as the "Gestionnaires" sidebar destination -
+/// it has no `Scaffold`/`AppBar`/search field of its own; the shell's top
+/// bar owns the search field for whichever destination is active and
+/// passes the current query down via [searchQuery] (see
+/// `AppDestination.hasSearch`).
+///
 /// No reference mockup was provided for this specific screen (only
-/// `create_new_user_screen`, which this page is the launch point for) -
-/// built from `DESIGN.md`'s "Tables" component spec (no outer row
-/// borders, single bottom stroke, light-gray uppercase header) rather
-/// than left as an empty stub, since without it `CreateGestionnairePage`
-/// has nowhere to be reached from and the already-built list/search/
-/// realtime Bloc events would have no UI exercising them at all.
+/// `create_new_user_screen`, which this leads to via "Nouveau") - built
+/// from `DESIGN.md`'s "Tables" component spec (no outer row borders,
+/// single bottom stroke, light-gray uppercase header) rather than left as
+/// an empty stub, since without it `CreateGestionnairePage` had nowhere
+/// to be reached from and the already-built list/search/realtime Bloc
+/// events had no UI exercising them at all.
 class CompanyUsersPage extends StatefulWidget {
-  static const routeName = '/company/users';
+  final String searchQuery;
 
-  const CompanyUsersPage({super.key});
+  const CompanyUsersPage({super.key, this.searchQuery = ''});
 
   @override
   State<CompanyUsersPage> createState() => _CompanyUsersPageState();
 }
 
 class _CompanyUsersPageState extends State<CompanyUsersPage> {
-  final _searchController = TextEditingController();
   String? _companyId;
 
   @override
@@ -49,13 +54,20 @@ class _CompanyUsersPageState extends State<CompanyUsersPage> {
   }
 
   @override
+  void didUpdateWidget(covariant CompanyUsersPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.searchQuery != widget.searchQuery) {
+      _dispatchSearch(widget.searchQuery);
+    }
+  }
+
+  @override
   void dispose() {
-    _searchController.dispose();
     context.read<AuthBloc>().add(const AuthCompanyUsersWatchStopped());
     super.dispose();
   }
 
-  void _onSearchChanged(String query) {
+  void _dispatchSearch(String query) {
     final companyId = _companyId;
     if (companyId == null) return;
     if (query.trim().isEmpty) {
@@ -69,79 +81,66 @@ class _CompanyUsersPageState extends State<CompanyUsersPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: const Text('Gestionnaires'),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: AppSpacing.md),
-            child: FilledButton.icon(
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const CreateGestionnairePage()),
+    return Padding(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Gestionnaires', style: AppTextStyles.headlineSm),
+              FilledButton.icon(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const CreateGestionnairePage()),
+                ),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Nouveau'),
               ),
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('Nouveau'),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          Expanded(
+            child: BlocBuilder<AuthBloc, AuthState>(
+              buildWhen: (previous, current) =>
+                  previous.companyUsersStatus != current.companyUsersStatus ||
+                  previous.companyUsers != current.companyUsers,
+              builder: (context, state) {
+                if (state.companyUsersStatus == CompanyUsersStatus.loading &&
+                    state.companyUsers.isEmpty) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (state.companyUsersStatus == CompanyUsersStatus.error &&
+                    state.companyUsers.isEmpty) {
+                  return Center(
+                    child: Text(
+                      state.companyUsersFailure?.message ?? 'Une erreur est survenue.',
+                      style: AppTextStyles.bodyMd,
+                    ),
+                  );
+                }
+                if (state.companyUsers.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.people_outline, size: 40, color: AppColors.outline),
+                        const SizedBox(height: AppSpacing.md),
+                        Text('Aucun Gestionnaire pour le moment', style: AppTextStyles.bodyMd),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Cliquez sur "Nouveau" pour creer le premier compte.',
+                          style: AppTextStyles.bodySm,
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                return _UsersTable(users: state.companyUsers);
+              },
             ),
           ),
         ],
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              controller: _searchController,
-              onChanged: _onSearchChanged,
-              decoration: const InputDecoration(
-                hintText: 'Rechercher un Gestionnaire par nom...',
-                prefixIcon: Icon(Icons.search, size: 20),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            Expanded(
-              child: BlocBuilder<AuthBloc, AuthState>(
-                buildWhen: (previous, current) =>
-                    previous.companyUsersStatus != current.companyUsersStatus ||
-                    previous.companyUsers != current.companyUsers,
-                builder: (context, state) {
-                  if (state.companyUsersStatus == CompanyUsersStatus.loading &&
-                      state.companyUsers.isEmpty) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  if (state.companyUsersStatus == CompanyUsersStatus.error &&
-                      state.companyUsers.isEmpty) {
-                    return Center(
-                      child: Text(
-                        state.companyUsersFailure?.message ?? 'Une erreur est survenue.',
-                        style: AppTextStyles.bodyMd,
-                      ),
-                    );
-                  }
-                  if (state.companyUsers.isEmpty) {
-                    return Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.people_outline, size: 40, color: AppColors.outline),
-                          const SizedBox(height: AppSpacing.md),
-                          Text('Aucun Gestionnaire pour le moment', style: AppTextStyles.bodyMd),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Cliquez sur "Nouveau" pour creer le premier compte.',
-                            style: AppTextStyles.bodySm,
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-                  return _UsersTable(users: state.companyUsers);
-                },
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

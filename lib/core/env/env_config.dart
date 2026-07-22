@@ -16,6 +16,7 @@ class EnvConfig {
   static late final String databaseId;
   static late final String companiesCollectionId;
   static late final String userProfilesCollectionId;
+  static late final String subscriptionPlansCollectionId;
 
   /// THE single Appwrite Function for this entire project (see
   /// `functions/api/src/main.py`). Every feature's privileged
@@ -41,6 +42,7 @@ class EnvConfig {
     databaseId = _require('APPWRITE_DATABASE_ID');
     companiesCollectionId = _require('APPWRITE_COLLECTION_COMPANIES');
     userProfilesCollectionId = _require('APPWRITE_COLLECTION_USER_PROFILES');
+    subscriptionPlansCollectionId = _require('APPWRITE_COLLECTION_SUBSCRIPTION_PLANS');
     apiFunctionId = _require('APPWRITE_FUNCTION_API');
   }
 

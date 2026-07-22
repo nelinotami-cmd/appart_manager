@@ -2,9 +2,31 @@ import 'package:appwrite/appwrite.dart';
 import 'package:get_it/get_it.dart';
 
 import '../env/env_config.dart';
+import '../../features/company/data/datasources/company_functions_remote_datasource.dart';
 import '../../features/company/data/datasources/company_remote_datasource.dart';
 import '../../features/company/data/repositories/company_repository_impl.dart';
 import '../../features/company/domain/repositories/company_repository.dart';
+import '../../features/company/domain/usecases/assign_subscription_plan_usecase.dart';
+import '../../features/company/domain/usecases/get_company_by_id_usecase.dart';
+import '../../features/company/domain/usecases/list_companies_by_plan_id_usecase.dart';
+import '../../features/company/domain/usecases/list_companies_usecase.dart';
+import '../../features/company/domain/usecases/search_companies_usecase.dart';
+import '../../features/company/domain/usecases/update_company_profile_usecase.dart';
+import '../../features/company/domain/usecases/update_company_status_usecase.dart';
+import '../../features/company/domain/usecases/watch_companies_usecase.dart';
+import '../../features/company/presentation/bloc/company_bloc.dart';
+import '../../features/subscription/data/datasources/subscription_functions_remote_datasource.dart';
+import '../../features/subscription/data/datasources/subscription_remote_datasource.dart';
+import '../../features/subscription/data/repositories/subscription_repository_impl.dart';
+import '../../features/subscription/domain/repositories/subscription_repository.dart';
+import '../../features/subscription/domain/usecases/create_plan_usecase.dart';
+import '../../features/subscription/domain/usecases/delete_plan_usecase.dart';
+import '../../features/subscription/domain/usecases/get_plan_by_id_usecase.dart';
+import '../../features/subscription/domain/usecases/list_plans_usecase.dart';
+import '../../features/subscription/domain/usecases/search_plans_usecase.dart';
+import '../../features/subscription/domain/usecases/update_plan_usecase.dart';
+import '../../features/subscription/domain/usecases/watch_plans_usecase.dart';
+import '../../features/subscription/presentation/bloc/subscription_bloc.dart';
 import '../../features/auth/data/datasources/auth_account_remote_datasource.dart';
 import '../../features/auth/data/datasources/auth_functions_remote_datasource.dart';
 import '../../features/auth/data/datasources/user_profile_remote_datasource.dart';
@@ -35,6 +57,7 @@ Future<void> initServiceLocator() async {
   _initAppwriteCore();
   _initCompanyFeature();
   _initAuthFeature();
+  _initSubscriptionFeature();
 }
 
 /// Registers the raw Appwrite SDK services shared by every feature.
@@ -59,13 +82,83 @@ void _initAppwriteCore() {
 /// "register company + admin" flow (see cahier des charges 5.1 & 5.2).
 /// Full Company CRUD/activation (5.2) will extend this registration when
 /// that feature is implemented.
+/// Company feature (5.2): full CRUD/search/realtime for reads, privileged
+/// Cloud Function resources (via the shared `api` function) for writes -
+/// see `CompanyRepository`'s doc comment for the exact split and why.
 void _initCompanyFeature() {
   sl.registerLazySingleton<CompanyRemoteDataSource>(
-    () => CompanyRemoteDataSourceImpl(databases: sl<Databases>()),
+    () => CompanyRemoteDataSourceImpl(databases: sl<Databases>(), realtime: sl<Realtime>()),
+  );
+  sl.registerLazySingleton<CompanyFunctionsRemoteDataSource>(
+    () => CompanyFunctionsRemoteDataSourceImpl(functions: sl<Functions>()),
   );
 
   sl.registerLazySingleton<CompanyRepository>(
-    () => CompanyRepositoryImpl(remoteDataSource: sl<CompanyRemoteDataSource>()),
+    () => CompanyRepositoryImpl(
+      remoteDataSource: sl<CompanyRemoteDataSource>(),
+      functionsDataSource: sl<CompanyFunctionsRemoteDataSource>(),
+    ),
+  );
+
+  sl.registerLazySingleton(() => GetCompanyByIdUseCase(sl()));
+  sl.registerLazySingleton(() => UpdateCompanyProfileUseCase(sl()));
+  sl.registerLazySingleton(() => UpdateCompanyStatusUseCase(sl()));
+  sl.registerLazySingleton(() => AssignSubscriptionPlanUseCase(sl()));
+  sl.registerLazySingleton(() => ListCompaniesUseCase(sl()));
+  sl.registerLazySingleton(() => SearchCompaniesUseCase(sl()));
+  sl.registerLazySingleton(() => WatchCompaniesUseCase(sl()));
+  sl.registerLazySingleton(() => ListCompaniesByPlanIdUseCase(sl()));
+
+  sl.registerFactory(
+    () => CompanyBloc(
+      getCompanyByIdUseCase: sl(),
+      updateCompanyProfileUseCase: sl(),
+      updateCompanyStatusUseCase: sl(),
+      assignSubscriptionPlanUseCase: sl(),
+      listCompaniesUseCase: sl(),
+      searchCompaniesUseCase: sl(),
+      watchCompaniesUseCase: sl(),
+    ),
+  );
+}
+
+/// Subscription feature (5.3): plans are global (not tenant-scoped), so
+/// writes are Super Admin-only privileged Cloud Function resources and
+/// reads are plain client calls - every plan document is created with
+/// `read(users)` permission (see `subscription.create-plan`).
+void _initSubscriptionFeature() {
+  sl.registerLazySingleton<SubscriptionRemoteDataSource>(
+    () => SubscriptionRemoteDataSourceImpl(databases: sl<Databases>(), realtime: sl<Realtime>()),
+  );
+  sl.registerLazySingleton<SubscriptionFunctionsRemoteDataSource>(
+    () => SubscriptionFunctionsRemoteDataSourceImpl(functions: sl<Functions>()),
+  );
+
+  sl.registerLazySingleton<SubscriptionRepository>(
+    () => SubscriptionRepositoryImpl(
+      remoteDataSource: sl<SubscriptionRemoteDataSource>(),
+      functionsDataSource: sl<SubscriptionFunctionsRemoteDataSource>(),
+    ),
+  );
+
+  sl.registerLazySingleton(() => CreatePlanUseCase(sl()));
+  sl.registerLazySingleton(() => UpdatePlanUseCase(sl()));
+  sl.registerLazySingleton(() => DeletePlanUseCase(sl()));
+  sl.registerLazySingleton(() => GetPlanByIdUseCase(sl()));
+  sl.registerLazySingleton(() => ListPlansUseCase(sl()));
+  sl.registerLazySingleton(() => SearchPlansUseCase(sl()));
+  sl.registerLazySingleton(() => WatchPlansUseCase(sl()));
+
+  sl.registerFactory(
+    () => SubscriptionBloc(
+      createPlanUseCase: sl(),
+      updatePlanUseCase: sl(),
+      deletePlanUseCase: sl(),
+      getPlanByIdUseCase: sl(),
+      listPlansUseCase: sl(),
+      searchPlansUseCase: sl(),
+      watchPlansUseCase: sl(),
+    ),
   );
 }
 

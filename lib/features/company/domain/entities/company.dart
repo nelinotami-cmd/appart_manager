@@ -3,16 +3,10 @@ import 'package:equatable/equatable.dart';
 import 'company_status.dart';
 
 /// Domain entity for a tenant company (cahier des charges 5.2).
-///
-/// NOTE: this feature is intentionally minimal for now. It is created here
-/// only because Auth's "register company + admin" flow (5.1) needs a
-/// Company document to attach the new Admin's `companyId` to. Full Company
-/// management (profile edition, activation toggle, subscription plan
-/// association) belongs to section 5.2 and will extend this entity/feature
-/// when implemented - do not add unrelated fields here in the meantime.
 class Company extends Equatable {
   final String id;
   final String name;
+  final String contactName;
   final String contactEmail;
   final String contactPhone;
   final String address;
@@ -24,6 +18,7 @@ class Company extends Equatable {
   const Company({
     required this.id,
     required this.name,
+    required this.contactName,
     required this.contactEmail,
     required this.contactPhone,
     required this.address,
@@ -37,6 +32,7 @@ class Company extends Equatable {
   List<Object?> get props => [
         id,
         name,
+        contactName,
         contactEmail,
         contactPhone,
         address,

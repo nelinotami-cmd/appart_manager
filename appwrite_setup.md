@@ -76,16 +76,31 @@ appwrite databases create \
 
 ## 2. Collection: `companies`
 
+**Corrected from an earlier version of this doc**, now that feature 5.2
+is actually built: this collection had a blanket `read("users")`
+permission, meaning any authenticated user from any company could read
+every company's document. Since 5.2 gives Admins real data to look at,
+that's no longer acceptable. There is now **no collection-level
+permission at all** - every document gets its own per-document
+`read(team:<companyId>)` + `read(label:superAdmin)` grants, set inside
+`auth.register-company-and-admin` (the only place a company is ever
+created - see `CompanyRepository`'s doc comment for why 5.2 has no
+separate create resource). Nobody gets direct `update` permission either -
+every write goes through a `company.*` Cloud Function resource instead,
+because Appwrite permissions are document-level, not field-level, and an
+Admin having `update` on the document would also let them flip
+`status`/`subscriptionPlanId` directly, which only Super Admin may do.
+
 ```bash
 appwrite databases create-collection \
   --database-id erp_dev_db \
   --collection-id companies \
   --name "Companies" \
-  --document-security true \
-  --permissions 'read("users")'
-  # no create/update/delete permission here on purpose: server-only via functions.
+  --document-security true
+  # no --permissions flag at all, same reasoning as user_profiles below.
 
 appwrite databases create-string-attribute --database-id erp_dev_db --collection-id companies --key name --size 255 --required true
+appwrite databases create-string-attribute --database-id erp_dev_db --collection-id companies --key contactName --size 255 --required true
 appwrite databases create-string-attribute --database-id erp_dev_db --collection-id companies --key contactEmail --size 255 --required true
 appwrite databases create-string-attribute --database-id erp_dev_db --collection-id companies --key contactPhone --size 32 --required true
 appwrite databases create-string-attribute --database-id erp_dev_db --collection-id companies --key address --size 500 --required true
@@ -93,9 +108,64 @@ appwrite databases create-enum-attribute --database-id erp_dev_db --collection-i
 appwrite databases create-string-attribute --database-id erp_dev_db --collection-id companies --key subscriptionPlanId --size 64 --required false
 
 appwrite databases create-index --database-id erp_dev_db --collection-id companies --key idx_status --type key --attributes status
+appwrite databases create-index --database-id erp_dev_db --collection-id companies --key idx_name_search --type fulltext --attributes name
 ```
 
-## 3. Collection: `user_profiles`
+**`contactName` is new** (added while building out 5.2's actual UI - the
+mockups treat "contact" as a named person, and the original attribute
+set only had email/phone). If you already created the `companies`
+collection before this, add it now and backfill existing documents:
+
+```bash
+appwrite databases create-string-attribute --database-id erp_dev_db --collection-id companies --key contactName --size 255 --required true --default "REPLACE_ME"
+# Then update each existing company document's contactName to something
+# real (its Admin's name is a reasonable default, matching what
+# auth.register-company-and-admin now sets for new companies).
+```
+
+**If you already ran the old version of this doc**, your `companies`
+collection currently has `read("users")` set at the collection level and
+your existing company document(s) have no per-document permissions at
+all (since the old `auth.register-company-and-admin` didn't set any).
+Fix both:
+
+```bash
+# Remove the old collection-level permission:
+appwrite databases update-collection --database-id erp_dev_db --collection-id companies --name "Companies" --document-security true
+
+# Grant the new per-document permissions to any company created before this fix
+# (replace <companyId> for each existing company):
+appwrite databases update-document --database-id erp_dev_db --collection-id companies --document-id <companyId> --permissions 'read("team:<companyId>")' 'read("label:superAdmin")'
+```
+
+## 3. Collection: `subscription_plans`
+
+New for feature 5.3. Unlike `companies`/`user_profiles`, this collection
+is **not** tenant-scoped - plans are global catalog data, readable by any
+authenticated user (an Admin needs to see their own plan's price/features
+in 5.2), writable only through the `subscription.*` Cloud Function
+resources (Super Admin only, enforced inside each handler).
+
+```bash
+appwrite databases create-collection \
+  --database-id erp_dev_db \
+  --collection-id subscription_plans \
+  --name "Subscription Plans" \
+  --document-security true
+  # no collection-level permission; each document gets read(users) set
+  # explicitly by subscription.create-plan, matching the "readable by any
+  # authenticated user" intent without granting anyone a collection-wide
+  # blanket permission up front.
+
+appwrite databases create-string-attribute --database-id erp_dev_db --collection-id subscription_plans --key name --size 255 --required true
+appwrite databases create-string-attribute --database-id erp_dev_db --collection-id subscription_plans --key description --size 1000 --required true
+appwrite databases create-float-attribute --database-id erp_dev_db --collection-id subscription_plans --key monthlyPrice --required true --min 0
+appwrite databases create-string-attribute --database-id erp_dev_db --collection-id subscription_plans --key enabledFeatures --size 64 --required false --array true
+
+appwrite databases create-index --database-id erp_dev_db --collection-id subscription_plans --key idx_name_search --type fulltext --attributes name
+```
+
+## 4. Collection: `user_profiles`
 
 ```bash
 appwrite databases create-collection \
@@ -138,7 +208,7 @@ appwrite databases create-index --database-id erp_dev_db --collection-id user_pr
 > (`UserProfileMapper._extractRelationId`) already tolerates both the
 > plain-id and populated-object shapes Appwrite may return for it.
 
-## 4. Functions
+## 5. Functions
 
 **Before running the `functions create` command below**, run
 `appwrite functions create --help` once and confirm `--execute` and
@@ -151,25 +221,34 @@ attempt blind: if anything in your `--help` output disagrees with what's
 below, go with `--help`, not this doc.
 
 **Project policy: exactly ONE Appwrite Function, ever.** Not just for
-Auth — every feature this project ever adds (Company, Bookings, Tasks,
-Notifications, ...) routes its privileged server-side operations through
-this same function, `api` (`functions/api/src/main.py`), selected by a
-`resource` field in the request body (e.g. `auth.create-gestionnaire-account`
-today; a future feature would add e.g. `company.create-company` to the
-same file's `_HANDLERS` dict — see the module docstring at the top of
-`main.py` for the exact convention). **Never create a second function
-directory under `functions/`.** This exists to fit under an Appwrite
-plan's function-count limit regardless of how many features get built —
-each Flutter-side call already sends the right `resource` value
-automatically (see `AuthFunctionsRemoteDataSource._executeResource`), so
-nothing about the app's behavior depends on how many features share this
-one function.
+Auth — every feature this project adds (Company and Subscription today;
+Bookings, Tasks, Notifications, ... later) routes its privileged
+server-side operations through this same function, `api`
+(`functions/api/src/main.py`), selected by a `resource` field in the
+request body (`auth.*`, `company.*`, `subscription.*` today — see the
+module docstring at the top of `main.py` for the full current list and
+the exact naming convention). **Never create a second function directory
+under `functions/`.** This exists to fit under an Appwrite plan's
+function-count limit regardless of how many features get built — each
+Flutter-side call already sends the right `resource` value automatically
+(see `AuthFunctionsRemoteDataSource._executeResource` and its
+`CompanyFunctionsRemoteDataSource`/`SubscriptionFunctionsRemoteDataSource`
+equivalents), so nothing about the app's behavior depends on how many
+features share this one function.
 
 The function's execute permission has to be `any` (the widest any single
 resource needs — registration and login-identifier resolution must be
 callable by guests), and its scopes are the *union* of every resource's
-needs — today that's all six Auth resources' combined requirements; a
-future feature's handler may need to add more scopes here too:
+needs. **Corrected from an earlier version of this doc:** every handler
+below calls document-level operations (`create_document`, `get_document`,
+`update_document`, `delete_document`, `list_documents`) - these are
+gated by the `documents.*` scopes specifically, NOT `databases.*` (which
+gates database/collection/schema management operations that nothing in
+this function actually performs at runtime). Using `databases.read`/
+`databases.write` here - as an earlier version of this doc said to -
+silently does nothing useful and produces a `missing scopes
+(["documents.write"])` error the first time any handler tries to write a
+document:
 
 ```bash
 appwrite functions create \
@@ -177,15 +256,19 @@ appwrite functions create \
   --name "API" \
   --runtime python-3.12 \
   --execute any \
-  --scopes databases.read databases.write users.write teams.write \
+  --scopes documents.read documents.write users.write teams.write \
   --entrypoint src/main.py \
   --timeout 15
 ```
 
 If your installed CLI version rejects the `--scopes` flag on `create`
 (older CLIs only accept it on function *update*, not creation), run
-`appwrite functions update --function-id api --scopes databases.read databases.write users.write teams.write`
-right after the `create` call above.
+`appwrite functions update --function-id api --scopes documents.read documents.write users.write teams.write`
+right after the `create` call above. Either way, this can also be set
+from Console → Functions → `api` → Settings → Scopes (check
+`documents.read` and `documents.write` alongside `users.write` and
+`teams.write`) - no redeploy needed for a scope-only change, it takes
+effect on the next execution.
 
 `any` execute permission does **not** mean every resource is public —
 each handler inside `api/src/main.py` still checks `x-appwrite-user-id`
@@ -198,14 +281,20 @@ actually meant to be reachable by anyone. Every future resource added to
 this function must keep doing its own auth check the same way — the
 router does not (and cannot, generically) enforce this for you.
 
-The function needs the same three environment variables as before, now
-set once:
+The function needs four environment variables (the subscription_plans
+one is new for feature 5.3), set once:
 
 ```bash
 appwrite functions create-variable --function-id api --key APPWRITE_DATABASE_ID --value erp_dev_db
 appwrite functions create-variable --function-id api --key APPWRITE_COLLECTION_COMPANIES --value companies
 appwrite functions create-variable --function-id api --key APPWRITE_COLLECTION_USER_PROFILES --value user_profiles
+appwrite functions create-variable --function-id api --key APPWRITE_COLLECTION_SUBSCRIPTION_PLANS --value subscription_plans
 ```
+
+If you already have this function deployed from before 5.3, just add the
+one new variable - `_load_env()` in `main.py` will tell you clearly if
+it's missing (a 500 with a message naming the exact key) rather than
+failing opaquely.
 
 Deploy it (run from the function's own directory so `requirements.txt` is
 picked up):
@@ -221,7 +310,7 @@ not), re-run this same `create-deployment` command to push the updated
 code — there's still only ever the one `create` command from above, run
 once, ever.
 
-## 5. Super Admin (manually created, per project instructions)
+## 6. Super Admin (manually created, per project instructions)
 
 The Super Admin is created once, out-of-band, directly via the Appwrite
 Console or CLI (NOT through `register-company-and-admin`, which always
@@ -233,22 +322,30 @@ for you):
 ```bash
 appwrite users create \
   --user-id super-admin-001 \
-  --email sa@sa.cm \
-  --phone "+237691812939" \
-  --password "FaroF@r0" \
+  --email REPLACE_ME@yourcompany.cm \
+  --phone "+237REPLACE_ME" \
+  --password "REPLACE_ME_ChangeImmediately!" \
   --name "Super Admin"
 
 appwrite databases create-document \
   --database-id erp_dev_db \
   --collection-id user_profiles \
   --document-id super-admin-001 \
-  --data '{"fullName":"Super Admin","email":"sa@sa.cm","phone":"+237691812939","role":"superAdmin","companyId":null,"status":"active","createdBy":null}' \
+  --data '{"fullName":"Super Admin","email":"REPLACE_ME@yourcompany.cm","phone":"+237REPLACE_ME","role":"superAdmin","companyId":null,"status":"active","createdBy":null}' \
   --permissions 'read("user:super-admin-001")' 'update("user:super-admin-001")'
+
+# Required as of feature 5.2: every company document grants
+# read(label:superAdmin) instead of a blanket collection-level read, so
+# the Super Admin's Auth account needs this exact label to actually see
+# any company. Without this step, the Super Admin can log in but every
+# company (including ones already showing up for other users) will 404
+# for them specifically.
+appwrite users update-labels --user-id super-admin-001 --labels superAdmin
 ```
 
-(The Super Admin has no company Team; give it broader read access to all
-companies' data via future Super Admin-scoped Cloud Functions, once
-section 5.2/5.3 dashboards are implemented — not needed for Auth alone.)
+(No company Team for the Super Admin - the `label:superAdmin` grant above
+is what gives them cross-tenant read access to every company document
+and its Realtime events, instead of team membership.)
 
 ## Other environments (preprod / prod)
 
