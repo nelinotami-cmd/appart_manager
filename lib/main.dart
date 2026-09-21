@@ -1,26 +1,35 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_web_plugins/url_strategy.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'core/di/service_locator.dart';
 import 'core/env/env_config.dart';
-import 'core/navigation/app_shell.dart';
+import 'core/navigation/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/presentation/bloc/auth_bloc.dart';
 import 'features/auth/presentation/bloc/auth_event.dart';
 import 'features/auth/presentation/bloc/auth_state.dart';
-import 'features/auth/presentation/pages/login_page.dart';
 import 'features/company/presentation/bloc/company_bloc.dart';
+import 'features/notification/domain/services/local_reminder_scheduler.dart';
+import 'features/notification/presentation/bloc/notification_bloc.dart';
 import 'features/subscription/presentation/bloc/subscription_bloc.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Flavor selection: pass `--dart-define=FLAVOR=preprod` (or `prod`) at
-  // build time; defaults to dev for local runs.
-  const flavorName = String.fromEnvironment('FLAVOR', defaultValue: 'dev');
+  // Removes the `#` from web URLs.
+  usePathUrlStrategy();
+
+  // Flavor selection.
+  const flavorName = String.fromEnvironment(
+    'FLAVOR',
+    defaultValue: 'dev',
+  );
+
   final flavor = switch (flavorName) {
     'preprod' => AppFlavor.preprod,
     'prod' => AppFlavor.prod,
@@ -29,12 +38,7 @@ Future<void> main() async {
 
   await EnvConfig.load(flavor);
 
-  // hydrated_bloc ^9.1.5 (pinned in pubspec.yaml) exposes
-  // `HydratedStorage.webStorageDirectory` for web and expects a plain
-  // `Directory` otherwise. The `HydratedStorageDirectory` wrapper class
-  // used in some hydrated_bloc examples online is a 10.x-only API - do
-  // not use it unless pubspec.yaml is bumped to `hydrated_bloc: ^10.0.0`
-  // (and flutter_bloc/bloc bumped to a matching major version too).
+  // Hydrated Bloc storage.
   HydratedBloc.storage = await HydratedStorage.build(
     storageDirectory: kIsWeb
         ? HydratedStorage.webStorageDirectory
@@ -43,66 +47,92 @@ Future<void> main() async {
 
   await initServiceLocator();
 
-  runApp(const AppartementsErpApp());
+  // Local notifications are not supported by
+  // flutter_local_notifications on Web.
+  //
+  // Do not initialize or request notification permissions on Web,
+  // otherwise native notification initialization can interfere with
+  // application startup.
+  if (!kIsWeb) {
+    final localReminderScheduler = sl<LocalReminderScheduler>();
+
+    await localReminderScheduler.initialize();
+    await localReminderScheduler.requestPermission();
+  }
+
+  // Created once here so the router and widget tree use the same
+  // AuthBloc instance.
+  final authBloc = sl<AuthBloc>()..add(const AuthCheckRequested());
+  final router = buildAppRouter(authBloc);
+
+  runApp(
+    AppartementsErpApp(
+      authBloc: authBloc,
+      router: router,
+    ),
+  );
 }
 
 class AppartementsErpApp extends StatelessWidget {
-  const AppartementsErpApp({super.key});
+  final AuthBloc authBloc;
+  final GoRouter router;
+
+  const AppartementsErpApp({
+    super.key,
+    required this.authBloc,
+    required this.router,
+  });
 
   @override
   Widget build(BuildContext context) {
     return MultiBlocProvider(
       providers: [
-        BlocProvider<AuthBloc>(
-          create: (_) => sl<AuthBloc>()..add(const AuthCheckRequested()),
+        BlocProvider<AuthBloc>.value(value: authBloc),
+        BlocProvider<CompanyBloc>(
+          create: (_) => sl<CompanyBloc>(),
         ),
-        BlocProvider<CompanyBloc>(create: (_) => sl<CompanyBloc>()),
-        BlocProvider<SubscriptionBloc>(create: (_) => sl<SubscriptionBloc>()),
-        // Additional feature Blocs are registered here as they are
-        // generated (locations, meubles, ...).
+        BlocProvider<SubscriptionBloc>(
+          create: (_) => sl<SubscriptionBloc>(),
+        ),
+        BlocProvider<NotificationBloc>(
+          create: (_) => sl<NotificationBloc>(),
+        ),
       ],
-      child: MaterialApp(
+      child: MaterialApp.router(
         title: 'Appartements ERP',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light,
-        home: const _AuthGate(),
+        routerConfig: router,
+        builder: (context, child) {
+          return BlocBuilder<AuthBloc, AuthState>(
+            bloc: authBloc,
+            buildWhen: (previous, current) => previous.status != current.status,
+            builder: (context, authState) {
+              final isResolving = authState.status == AuthStatus.initial ||
+                  authState.status == AuthStatus.loading;
+
+              if (isResolving) {
+                return const _LoadingOverlay();
+              }
+
+              return child ?? const SizedBox.shrink();
+            },
+          );
+        },
       ),
     );
   }
 }
 
-/// Root splash/routing gate: waits for `AuthCheckRequested` (dispatched
-/// once above) to resolve, then shows `LoginPage` or the (temporary)
-/// authenticated landing page accordingly. `HydratedBloc` may already
-/// have restored a cached `currentUser` before the network check
-/// completes - that's used here to skip the spinner on a likely-valid
-/// warm start, while `AuthCheckRequested`'s own result is still what
-/// ultimately decides `authenticated` vs `unauthenticated`.
-class _AuthGate extends StatelessWidget {
-  const _AuthGate();
-
-  @override
-  Widget build(BuildContext context) {
-    return BlocBuilder<AuthBloc, AuthState>(
-      buildWhen: (previous, current) => previous.status != current.status,
-      builder: (context, state) {
-        return switch (state.status) {
-          AuthStatus.authenticated => const AppShell(),
-          AuthStatus.unauthenticated || AuthStatus.error => const LoginPage(),
-          AuthStatus.initial || AuthStatus.loading => const _SplashScreen(),
-        };
-      },
-    );
-  }
-}
-
-class _SplashScreen extends StatelessWidget {
-  const _SplashScreen();
+class _LoadingOverlay extends StatelessWidget {
+  const _LoadingOverlay();
 
   @override
   Widget build(BuildContext context) {
     return const Scaffold(
-      body: Center(child: CircularProgressIndicator()),
+      body: Center(
+        child: CircularProgressIndicator(),
+      ),
     );
   }
 }

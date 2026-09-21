@@ -95,23 +95,30 @@ class _SubscriptionDetailPageState extends State<SubscriptionDetailPage> {
                       Expanded(
                         child: Text(plan.name, style: AppTextStyles.headlineMd),
                       ),
-                      OutlinedButton.icon(
-                        onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                ConfigureSubscriptionPage(planId: plan.id),
+                      // Wrapped in IntrinsicWidth: see the note in
+                      // company_detail_page.dart - same Row-measurement
+                      // quirk with OutlinedButton's internal _InputPadding.
+                      IntrinsicWidth(
+                        child: OutlinedButton.icon(
+                          onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  ConfigureSubscriptionPage(planId: plan.id),
+                            ),
                           ),
+                          icon: const Icon(Icons.edit_outlined, size: 16),
+                          label: const Text('Modifier'),
                         ),
-                        icon: const Icon(Icons.edit_outlined, size: 16),
-                        label: const Text('Modifier'),
                       ),
                       const SizedBox(width: AppSpacing.sm),
-                      OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.error),
-                        onPressed: () => _delete(plan),
-                        icon: const Icon(Icons.delete_outline, size: 16),
-                        label: const Text('Supprimer'),
+                      IntrinsicWidth(
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.error),
+                          onPressed: () => _delete(plan),
+                          icon: const Icon(Icons.delete_outline, size: 16),
+                          label: const Text('Supprimer'),
+                        ),
                       ),
                     ],
                   ),

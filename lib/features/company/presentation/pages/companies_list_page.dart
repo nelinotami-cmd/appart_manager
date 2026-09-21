@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../../core/navigation/app_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -9,23 +11,13 @@ import '../../domain/entities/company_status.dart';
 import '../bloc/company_bloc.dart';
 import '../bloc/company_event.dart';
 import '../bloc/company_state.dart';
-import 'company_detail_page.dart';
 
 /// Matches the reference `Gestion des Entreprises` mockups (desktop
 /// table / mobile cards) - Super Admin's list of every company.
 ///
-/// Dropped from the mockups (see scope note in the session summary):
-/// "Inscrire une Entreprise" button (no standalone create-company
-/// resource - creation is exclusively via 5.1's registration flow),
-/// Total Clients / Taux d'Activation / MRR stat cards (not in cahier des
-/// charges 5.2, and MRR specifically implies billing/invoicing that
-/// isn't built).
-///
-/// Hosted inside `AppShell`; search is driven externally via
-/// [searchQuery] (see `AppDestination.hasSearch`), same pattern as
-/// `CompanyUsersPage`. The status filter below is a separate, local
-/// control (client-side filter over the already-loaded list) since the
-/// shell's one search field is already spoken for by name search.
+/// Rendered at `/companies` inside `AppShell`'s ShellRoute. Dropped from
+/// the mockups: "Inscrire une Entreprise" button (no standalone
+/// create-company resource), stat cards (not in cahier des charges 5.2).
 class CompaniesListPage extends StatefulWidget {
   final String searchQuery;
 
@@ -198,9 +190,7 @@ class _CompaniesTable extends StatelessWidget {
               itemBuilder: (context, index) {
                 final company = companies[index];
                 return InkWell(
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => CompanyDetailPage(companyId: company.id)),
-                  ),
+                  onTap: () => context.push(AppRoutes.companyDetail(company.id)),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                         horizontal: AppSpacing.md, vertical: AppSpacing.sm),
@@ -241,9 +231,7 @@ class _CompanyCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(AppRadius.large),
       child: InkWell(
         borderRadius: BorderRadius.circular(AppRadius.large),
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => CompanyDetailPage(companyId: company.id)),
-        ),
+        onTap: () => context.push(AppRoutes.companyDetail(company.id)),
         child: Container(
           padding: const EdgeInsets.all(AppSpacing.md),
           decoration: BoxDecoration(

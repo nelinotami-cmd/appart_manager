@@ -3,12 +3,18 @@ import 'package:flutter/material.dart';
 import '../../features/auth/domain/entities/user_role.dart';
 
 /// Describes one sidebar entry (cahier des charges 5.2-5.11, plus the
-/// 5.11 Dashboard as home). `AppShell` is the only place these are
-/// assembled into the actual nav list - this class just describes one.
+/// 5.11 Dashboard as home).
+///
+/// Content is no longer built here directly - [path] is a real go_router
+/// route inside `AppRouter`'s route tree, and GoRouter itself decides
+/// which widget to render for the current URL. This class exists purely
+/// to drive the sidebar UI: which icon/label to show, which roles see
+/// it, and which URL tapping it navigates to (`context.go(path)`).
 class AppDestination {
   final String id;
   final IconData icon;
   final String label;
+  final String path;
 
   /// `null` = visible to every role. Non-null = only these roles see it
   /// in the sidebar at all (server-side authorization is enforced
@@ -22,16 +28,11 @@ class AppDestination {
   final bool hasSearch;
   final String? searchHint;
 
-  /// Builds this destination's content area. Receives the current search
-  /// query (empty string if `hasSearch` is false or nothing typed yet) -
-  /// most placeholder destinations simply ignore it.
-  final Widget Function(BuildContext context, String searchQuery) contentBuilder;
-
   const AppDestination({
     required this.id,
     required this.icon,
     required this.label,
-    required this.contentBuilder,
+    required this.path,
     this.allowedRoles,
     this.hasSearch = false,
     this.searchHint,
@@ -41,5 +42,15 @@ class AppDestination {
     if (allowedRoles == null) return true;
     if (role == null) return false;
     return allowedRoles!.contains(role);
+  }
+
+  /// Whether [location] (the current route's URL) belongs to this
+  /// destination, for sidebar highlighting. Matches the destination's own
+  /// path and any of its sub-paths (e.g. `/companies/abc123` still
+  /// highlights the "Entreprises" item whose path is `/companies`), but
+  /// not another destination's path that happens to share a prefix.
+  bool matches(String location) {
+    if (location == path) return true;
+    return location.startsWith('$path/');
   }
 }

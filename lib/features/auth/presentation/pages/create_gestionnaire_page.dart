@@ -1,31 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/app_primary_button.dart';
+import '../../../../core/widgets/app_text_field.dart';
+import '../../../../core/widgets/inline_alert.dart';
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
 import '../bloc/auth_state.dart';
-import '../../../../core/widgets/app_primary_button.dart';
-import '../../../../core/widgets/app_text_field.dart';
-import '../widgets/auth_shell.dart';
 
-/// Matches the reference `create_new_user_screen` mockup's form card
-/// (Full Name / Work Email / Phone Number), with two deliberate
-/// differences from the mockup:
-///
-/// 1. No sidebar/app-shell navigation (Dashboard/Users/Security/Logs) -
-///    that belongs to the not-yet-built dashboard feature (5.11); this
-///    page is reachable only from `CompanyUsersPage` for now, wrapped in
-///    a plain `AppBar` instead.
-/// 2. No "Account Permission" selector - every account this screen
-///    creates is a Gestionnaire (cahier des charges 5.7 gives Admin no
-///    choice of role here), so showing a dropdown with only one
-///    possible value would be decorative at best, misleading at worst.
+/// Matches the reference `create_new_user_screen` mockup's form card.
+/// Reached only via `/gestionnaires/new`, a full-screen route outside
+/// `AppShell`'s ShellRoute (own Scaffold + back button, no sidebar).
 class CreateGestionnairePage extends StatefulWidget {
-  static const routeName = '/company/users/new';
+  static const routeName = '/gestionnaires/new';
 
   const CreateGestionnairePage({super.key});
 
@@ -125,7 +117,7 @@ class _CreateGestionnairePageState extends State<CreateGestionnairePage> {
 
     if (!context.mounted) return;
     context.read<AuthBloc>().add(const AuthLastCreatedGestionnaireTempPasswordAcknowledged());
-    Navigator.of(context).pop();
+    context.pop();
   }
 
   @override
@@ -176,7 +168,7 @@ class _CreateGestionnairePageState extends State<CreateGestionnairePage> {
                           if (_submitted &&
                               state.companyUsersStatus == CompanyUsersStatus.error &&
                               state.companyUsersFailure != null)
-                            AuthInlineAlert(message: state.companyUsersFailure!.message),
+                            AppInlineAlert(message: state.companyUsersFailure!.message),
                           AppTextField(
                             label: 'Nom complet',
                             hint: 'Ex. Jean Dupont',
@@ -203,9 +195,11 @@ class _CreateGestionnairePageState extends State<CreateGestionnairePage> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.end,
                             children: [
-                              TextButton(
-                                onPressed: isLoading ? null : () => Navigator.of(context).pop(),
-                                child: const Text('Annuler'),
+                              IntrinsicWidth(
+                                child: TextButton(
+                                  onPressed: isLoading ? null : () => context.pop(),
+                                  child: const Text('Annuler'),
+                                ),
                               ),
                               const SizedBox(width: AppSpacing.md),
                               SizedBox(

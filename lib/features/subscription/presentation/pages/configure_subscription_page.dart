@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
@@ -13,17 +14,9 @@ import '../bloc/subscription_bloc.dart';
 import '../bloc/subscription_event.dart';
 import '../bloc/subscription_state.dart';
 
-/// Matches the reference "Configurer l'Abonnement" mockups' Informations
-/// Generales + Structure de Prix + Fonctionnalites sections.
-///
-/// If [planId] is null, this creates a new plan; otherwise it loads and
-/// edits the existing one - one form for both.
-///
-/// Dropped from the mockups: "Cycle de Facturation" dropdown
-/// (Mensuel/Annuel) - `SubscriptionPlan.annualPrice` is always derived
-/// (monthly * 12 * 0.85, see its doc comment), there's no separate stored
-/// billing-cycle choice to make; the live "Apercu du Plan" preview panel
-/// (cosmetic, not required for CRUD).
+/// Matches the reference "Configurer l'Abonnement" mockups. Reached via
+/// `/subscriptions/new` (create) or `/subscriptions/:planId/edit`
+/// (edit), both full-screen routes outside `AppShell`'s ShellRoute.
 class ConfigureSubscriptionPage extends StatefulWidget {
   final String? planId;
 
@@ -107,7 +100,7 @@ class _ConfigureSubscriptionPageState extends State<ConfigureSubscriptionPage> {
         enabledFeatures: _selectedFeatures.toList(),
       ));
     }
-    Navigator.of(context).pop();
+    context.pop();
   }
 
   @override
@@ -195,9 +188,11 @@ class _ConfigureSubscriptionPageState extends State<ConfigureSubscriptionPage> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('Annuler'),
+                      IntrinsicWidth(
+                        child: TextButton(
+                          onPressed: () => context.pop(),
+                          child: const Text('Annuler'),
+                        ),
                       ),
                       const SizedBox(width: AppSpacing.md),
                       SizedBox(

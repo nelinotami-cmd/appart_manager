@@ -1,32 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../core/theme/app_theme.dart';
-import '../bloc/auth_bloc.dart';
-import '../bloc/auth_event.dart';
-import '../bloc/auth_state.dart';
 import '../../../../core/widgets/app_primary_button.dart';
 import '../../../../core/widgets/app_secondary_button.dart';
 import '../../../../core/widgets/app_text_field.dart';
+import '../bloc/auth_bloc.dart';
+import '../bloc/auth_event.dart';
+import '../bloc/auth_state.dart';
 import '../widgets/auth_shell.dart';
-import '../../../../core/navigation/app_shell.dart';
 
 enum _RegisterStep { company, admin, security }
 
-/// Matches the reference `register_company_screen` mockup's 3-step
-/// stepper (COMPANY / ADMIN / SECURITY) - the `sign_up_screen` mockup's
-/// "Identity / Verification / Setup" stepper is treated as an alternate
-/// take on the SAME registration flow rather than a separate one: the
-/// backend's `registerCompanyAndAdmin` use case is a single atomic call
-/// (`RegisterCompanyAndAdminParams` needs company + admin + password
-/// together, and there's no separate email-verification step in cahier
-/// des charges 5.1 for sign-up - OTP is reset-password-only). So this is
-/// built as ONE local, client-side wizard across 3 steps that only
-/// dispatches to `AuthBloc` on the final step, using the clearer
-/// COMPANY/ADMIN/SECURITY labels since they describe what's actually
-/// being collected.
+/// 3-step wizard (Company/Admin/Security). The backend's
+/// `registerCompanyAndAdmin` use case is a single atomic call, so this
+/// stays a local, client-side wizard that only dispatches to `AuthBloc`
+/// on the final step.
+///
+/// Navigation is go_router-based: on successful registration, `AuthBloc`
+/// emitting `authenticated` fires the router's `redirect`, sending us to
+/// `/dashboard` automatically - this page doesn't navigate on success
+/// itself. "Deja un compte ?" pops back to wherever this was pushed from
+/// (normally `/login`).
 class RegisterCompanyPage extends StatefulWidget {
   static const routeName = '/register-company';
 
@@ -131,23 +129,14 @@ class _RegisterCompanyPageState extends State<RegisterCompanyPage> {
 
   @override
   Widget build(BuildContext context) {
-    return BlocConsumer<AuthBloc, AuthState>(
-      listenWhen: (previous, current) => previous.status != current.status,
-      listener: (context, state) {
-        if (state.isAuthenticated) {
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (_) => const AppShell()),
-            (route) => false,
-          );
-        }
-      },
+    return BlocBuilder<AuthBloc, AuthState>(
       builder: (context, state) {
         final isLoading = state.status == AuthStatus.loading;
         return AuthShell(
           maxWidth: 520,
           footer: Center(
             child: TextButton(
-              onPressed: isLoading ? null : () => Navigator.of(context).pop(),
+              onPressed: isLoading ? null : () => context.pop(),
               child: const Text('Deja un compte ? Se connecter'),
             ),
           ),
@@ -178,9 +167,7 @@ class _RegisterCompanyPageState extends State<RegisterCompanyPage> {
                   Expanded(
                     flex: 2,
                     child: AppPrimaryButton(
-                      label: _step == _RegisterStep.security
-                          ? 'Creer le compte'
-                          : 'Suivant',
+                      label: _step == _RegisterStep.security ? 'Creer le compte' : 'Suivant',
                       isLoading: isLoading,
                       onPressed: _goNext,
                     ),
@@ -306,8 +293,7 @@ class _RegisterCompanyPageState extends State<RegisterCompanyPage> {
 
 /// Horizontal 3-circle stepper (`DESIGN.md` "Steppers" spec): completed
 /// steps solid primary with a checkmark, the active step outlined
-/// primary, future steps neutral gray - matching the reference
-/// `register_company_screen` mockup.
+/// primary, future steps neutral gray.
 class _RegisterStepper extends StatelessWidget {
   final _RegisterStep current;
 

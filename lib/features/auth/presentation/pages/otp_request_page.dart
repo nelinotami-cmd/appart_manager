@@ -1,27 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../../core/navigation/app_router.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/app_primary_button.dart';
+import '../../../../core/widgets/app_text_field.dart';
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
 import '../bloc/auth_state.dart';
-import '../../../../core/widgets/app_primary_button.dart';
-import '../../../../core/widgets/app_text_field.dart';
 import '../widgets/auth_shell.dart';
-import 'otp_verify_reset_password_page.dart';
 
 /// Matches the reference `password_recovery_screen` mockup: "Reset
 /// Password" heading, single Email-or-Phone field, "Send Recovery Code"
 /// button, "Back to Login" link.
-///
-/// The mockup's decorative navy side panel (server-room imagery, "Secure
-/// Recovery" bullet copy) is intentionally not reproduced - `DESIGN.md`
-/// doesn't define a split-panel hero pattern anywhere in its tokens, and
-/// one consistent `AuthShell` card across every Auth screen reads as a
-/// coherent product rather than a demo with mismatched styles per page.
 class OtpRequestPage extends StatefulWidget {
-  static const routeName = '/password-reset/request-otp';
+  static const routeName = '/password-reset/request';
 
   const OtpRequestPage({super.key});
 
@@ -50,12 +45,12 @@ class _OtpRequestPageState extends State<OtpRequestPage> {
       listenWhen: (previous, current) => previous.otpChallenge != current.otpChallenge,
       listener: (context, state) {
         if (state.otpChallenge != null) {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(
-              builder: (_) => OtpVerifyResetPasswordPage(
-                identifier: _identifierController.text.trim(),
-              ),
-            ),
+          final identifier = _identifierController.text.trim();
+          context.pushReplacement(
+            Uri(
+              path: AppRoutes.passwordResetVerify,
+              queryParameters: {'identifier': identifier},
+            ).toString(),
           );
         }
       },
@@ -64,7 +59,7 @@ class _OtpRequestPageState extends State<OtpRequestPage> {
         return AuthShell(
           footer: Center(
             child: TextButton.icon(
-              onPressed: isLoading ? null : () => Navigator.of(context).pop(),
+              onPressed: isLoading ? null : () => context.pop(),
               icon: const Icon(Icons.arrow_back, size: 16),
               label: const Text('Retour a la connexion'),
             ),

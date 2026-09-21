@@ -1,7 +1,9 @@
 import 'package:appartements_erp/features/subscription/domain/entities/subscription_feature.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../../core/navigation/app_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -9,19 +11,9 @@ import '../../domain/entities/subscription_plan.dart';
 import '../bloc/subscription_bloc.dart';
 import '../bloc/subscription_event.dart';
 import '../bloc/subscription_state.dart';
-import 'configure_subscription_page.dart';
-import 'subscription_detail_page.dart';
 
 /// Matches the reference `Gestion des Abonnements` mockups' plan list.
-///
-/// Dropped (not in cahier des charges 5.3, and each needs infrastructure
-/// beyond CRUD+list): Plans Actifs/Total Clients/MRR/Retention stat
-/// cards, "Analyse des Tendances" chart, "Besoin d'aide" consultant
-/// widget, per-plan "entreprises actives" usage bar (would need an
-/// aggregate count query per plan on every list render).
-///
-/// Hosted inside `AppShell`; search driven externally via [searchQuery],
-/// same pattern as `CompanyUsersPage`/`CompaniesListPage`.
+/// Rendered at `/subscriptions` inside `AppShell`'s ShellRoute.
 class SubscriptionsListPage extends StatefulWidget {
   final String searchQuery;
 
@@ -94,10 +86,7 @@ class _SubscriptionsListPageState extends State<SubscriptionsListPage> {
                 ),
               ),
               FilledButton.icon(
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                      builder: (_) => const ConfigureSubscriptionPage()),
-                ),
+                onPressed: () => context.push(AppRoutes.subscriptionNew),
                 icon: const Icon(Icons.add, size: 18),
                 label: const Text('Ajouter un Plan'),
               ),
@@ -202,11 +191,8 @@ class _PlansTable extends StatelessWidget {
               itemBuilder: (context, index) {
                 final plan = plans[index];
                 return InkWell(
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                        builder: (_) =>
-                            SubscriptionDetailPage(planId: plan.id)),
-                  ),
+                  onTap: () =>
+                      context.push(AppRoutes.subscriptionDetail(plan.id)),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                         horizontal: AppSpacing.md, vertical: AppSpacing.sm),
@@ -271,10 +257,7 @@ class _PlanCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(AppRadius.large),
       child: InkWell(
         borderRadius: BorderRadius.circular(AppRadius.large),
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(
-              builder: (_) => SubscriptionDetailPage(planId: plan.id)),
-        ),
+        onTap: () => context.push(AppRoutes.subscriptionDetail(plan.id)),
         child: Container(
           padding: const EdgeInsets.all(AppSpacing.md),
           decoration: BoxDecoration(

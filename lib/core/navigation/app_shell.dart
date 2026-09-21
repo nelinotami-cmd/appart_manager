@@ -1,172 +1,141 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../features/auth/domain/entities/user_role.dart';
 import '../../features/auth/presentation/bloc/auth_bloc.dart';
 import '../../features/auth/presentation/bloc/auth_event.dart';
 import '../../features/auth/presentation/bloc/auth_state.dart';
-import '../../features/auth/presentation/pages/company_users_page.dart';
-import '../../features/auth/presentation/pages/login_page.dart';
-import '../../features/company/presentation/pages/companies_list_page.dart';
-import '../../features/company/presentation/pages/company_detail_page.dart';
-import '../../features/dashboard/presentation/pages/dashboard_page.dart';
-import '../../features/subscription/presentation/pages/subscriptions_list_page.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
 import '../theme/app_theme.dart';
 import 'app_destination.dart';
-import 'feature_placeholder_page.dart';
+import 'app_router.dart';
 
 /// The app's single persistent navigation shell, hosting every major
 /// feature (cahier des charges 5.2-5.11) behind one sidebar, with
-/// Dashboard (5.11) as home. This is what every post-login/post-
-/// registration flow now lands on, replacing the earlier
-/// `TemporaryAuthenticatedHomePage` stand-in.
+/// Dashboard (5.11) as home.
 ///
-/// Search is contextual: the top bar owns one search field, but what it
-/// searches (and whether it's even enabled) depends on the active
-/// destination (`AppDestination.hasSearch`/`searchHint`) - most
-/// destinations don't have a search behavior wired up yet (either
-/// because the feature itself isn't built, or because it has no
-/// meaningful search target), so the field simply disables itself rather
-/// than silently doing nothing when typed into.
+/// Rendered by a `ShellRoute` in `app_router.dart` - [child] is whichever
+/// nested route matched the current URL, and [currentLocation] is that
+/// URL itself, used to highlight the right sidebar item and derive the
+/// active destination's search behavior. Tapping a sidebar item calls
+/// `context.go(destination.path)` - the URL actually changes, so the
+/// browser's address bar, back/forward buttons, and refresh all reflect
+/// real app state now, which is the whole point of this rewrite.
 class AppShell extends StatefulWidget {
-  const AppShell({super.key});
+  final Widget child;
+  final String currentLocation;
+  final ValueNotifier<String> searchNotifier;
+
+  const AppShell({
+    super.key,
+    required this.child,
+    required this.currentLocation,
+    required this.searchNotifier,
+  });
 
   @override
   State<AppShell> createState() => _AppShellState();
 }
 
 class _AppShellState extends State<AppShell> {
-  int _selectedIndex = 0;
-  String _searchQuery = '';
   final _searchController = TextEditingController();
 
-  late final List<AppDestination> _allDestinations = [
+  static final List<AppDestination> _allDestinations = [
     AppDestination(
       id: 'dashboard',
       icon: Icons.dashboard_outlined,
       label: 'Tableau de bord',
-      contentBuilder: (context, query) => const DashboardPage(),
+      path: AppRoutes.dashboard,
     ),
     AppDestination(
       id: 'companies',
       icon: Icons.apartment_outlined,
       label: 'Entreprises',
+      path: AppRoutes.companies,
       allowedRoles: {UserRole.admin, UserRole.superAdmin},
       hasSearch: true,
       searchHint: 'Rechercher une entreprise...',
-      // Admin only has one company - skip the list entirely and go
-      // straight to its detail view (the search field above is
-      // effectively inert for Admin, since `CompanyDetailPage` has no use
-      // for a query - a minor, accepted cosmetic tradeoff rather than
-      // making `hasSearch` role-conditional for one destination).
-      contentBuilder: (context, query) {
-        // .read(), not .watch(): this closure runs mid-build, invoked from
-        // AppShell's own build method rather than being a widget's build
-        // method itself - AppShell's outer BlocBuilder already reactively
-        // watches role changes (see its buildWhen), so this only ever
-        // needs the current value, not a second independent subscription.
-        final authState = context.read<AuthBloc>().state;
-        if (authState.currentUser?.role == UserRole.admin) {
-          final companyId = authState.currentUser?.companyId;
-          if (companyId == null) return const SizedBox.shrink();
-          return CompanyDetailContent(companyId: companyId);
-        }
-        return CompaniesListPage(searchQuery: query);
-      },
     ),
     AppDestination(
       id: 'subscriptions',
       icon: Icons.workspace_premium_outlined,
       label: 'Abonnements',
+      path: AppRoutes.subscriptions,
       allowedRoles: {UserRole.superAdmin},
       hasSearch: true,
       searchHint: 'Rechercher un plan...',
-      contentBuilder: (context, query) =>
-          SubscriptionsListPage(searchQuery: query),
     ),
     AppDestination(
       id: 'notifications',
       icon: Icons.notifications_none_rounded,
       label: 'Notifications',
-      contentBuilder: (context, query) => const FeaturePlaceholderPage(
-        featureLabel: 'Notifications',
-        cahierDesChargesSection: '5.4',
-      ),
+      path: AppRoutes.notifications,
     ),
     AppDestination(
       id: 'services',
       icon: Icons.room_service_outlined,
       label: 'Services',
+      path: AppRoutes.services,
       allowedRoles: {UserRole.admin, UserRole.superAdmin},
-      contentBuilder: (context, query) => const FeaturePlaceholderPage(
-        featureLabel: 'Services',
-        cahierDesChargesSection: '5.5',
-      ),
     ),
     AppDestination(
       id: 'locations',
       icon: Icons.place_outlined,
       label: 'Localisations',
-      allowedRoles: {
-        UserRole.admin,
-        UserRole.superAdmin,
-        UserRole.gestionnaire
-      },
-      contentBuilder: (context, query) => const FeaturePlaceholderPage(
-        featureLabel: 'Localisations',
-        cahierDesChargesSection: '5.6',
-      ),
+      path: AppRoutes.locations,
+      allowedRoles: {UserRole.admin, UserRole.superAdmin, UserRole.gestionnaire},
     ),
     AppDestination(
       id: 'gestionnaires',
       icon: Icons.people_outline,
       label: 'Gestionnaires',
+      path: AppRoutes.gestionnaires,
       allowedRoles: {UserRole.admin, UserRole.superAdmin},
       hasSearch: true,
       searchHint: 'Rechercher un gestionnaire par nom...',
-      contentBuilder: (context, query) => CompanyUsersPage(searchQuery: query),
     ),
     AppDestination(
       id: 'bookings',
       icon: Icons.event_available_outlined,
       label: 'Reservations',
-      contentBuilder: (context, query) => const FeaturePlaceholderPage(
-        featureLabel: 'Reservations',
-        cahierDesChargesSection: '5.8',
-      ),
+      path: AppRoutes.bookings,
     ),
     AppDestination(
       id: 'discounts',
       icon: Icons.percent_outlined,
       label: 'Reductions',
+      path: AppRoutes.discounts,
       allowedRoles: {UserRole.admin, UserRole.superAdmin},
-      contentBuilder: (context, query) => const FeaturePlaceholderPage(
-        featureLabel: 'Reductions',
-        cahierDesChargesSection: '5.9',
-      ),
     ),
     AppDestination(
       id: 'tasks',
       icon: Icons.checklist_outlined,
       label: 'Taches',
-      contentBuilder: (context, query) => const FeaturePlaceholderPage(
-        featureLabel: 'Taches',
-        cahierDesChargesSection: '5.10',
-      ),
+      path: AppRoutes.tasks,
     ),
   ];
 
   List<AppDestination> _visibleDestinations(UserRole? role) =>
       _allDestinations.where((d) => d.isVisibleFor(role)).toList();
 
-  void _onDestinationSelected(int index) {
-    setState(() {
-      _selectedIndex = index;
-      _searchQuery = '';
-      _searchController.clear();
-    });
+  /// The destination whose path matches (or is a parent of) the current
+  /// URL - e.g. `/companies/abc123` still highlights "Entreprises" (whose
+  /// own path is `/companies`). Falls back to the first visible
+  /// destination if nothing matches (shouldn't normally happen, since
+  /// every real route lives under some destination's path).
+  AppDestination _activeDestination(List<AppDestination> destinations) {
+    for (final d in destinations) {
+      if (d.matches(widget.currentLocation)) return d;
+    }
+    return destinations.first;
+  }
+
+  void _onDestinationSelected(BuildContext context, AppDestination destination) {
+    widget.searchNotifier.value = '';
+    _searchController.clear();
+    context.go(destination.path);
   }
 
   Future<void> _logout(BuildContext context) async {
@@ -189,10 +158,9 @@ class _AppShellState extends State<AppShell> {
     if (confirmed != true || !context.mounted) return;
 
     context.read<AuthBloc>().add(const AuthLogoutRequested());
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const LoginPage()),
-      (route) => false,
-    );
+    // No explicit navigation needed here: AuthBloc emitting
+    // `unauthenticated` fires the router's `refreshListenable`, and
+    // `redirect` sends us to /login on its own.
   }
 
   @override
@@ -204,21 +172,19 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<AuthBloc, AuthState>(
-      buildWhen: (previous, current) =>
-          previous.currentUser?.role != current.currentUser?.role,
+      buildWhen: (previous, current) => previous.currentUser?.role != current.currentUser?.role,
       builder: (context, state) {
         final role = state.currentUser?.role;
         final destinations = _visibleDestinations(role);
-        final selectedIndex = _selectedIndex.clamp(0, destinations.length - 1);
-        final active = destinations[selectedIndex];
+        final active = _activeDestination(destinations);
 
         final isWide = MediaQuery.of(context).size.width >= 900;
 
         final sidebar = _Sidebar(
           destinations: destinations,
-          selectedIndex: selectedIndex,
-          onSelected: (i) {
-            _onDestinationSelected(i);
+          active: active,
+          onSelected: (d) {
+            _onDestinationSelected(context, d);
             if (!isWide) Navigator.of(context).pop(); // close the Drawer
           },
           onLogout: () => _logout(context),
@@ -242,7 +208,7 @@ class _AppShellState extends State<AppShell> {
               controller: _searchController,
               enabled: active.hasSearch,
               hint: active.searchHint ?? 'Recherche non disponible ici',
-              onChanged: (value) => setState(() => _searchQuery = value),
+              onChanged: (value) => setState(() => widget.searchNotifier.value = value),
             ),
             actions: [
               IconButton(
@@ -250,9 +216,7 @@ class _AppShellState extends State<AppShell> {
                 icon: const Icon(Icons.notifications_none_rounded),
                 onPressed: () {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content: Text(
-                            'Notifications (5.4) - pas encore construit.')),
+                    const SnackBar(content: Text('Notifications (5.4) - pas encore construit.')),
                   );
                 },
               ),
@@ -265,9 +229,8 @@ class _AppShellState extends State<AppShell> {
             children: [
               if (isWide) SizedBox(width: 260, child: sidebar),
               if (isWide)
-                const VerticalDivider(
-                    width: 1, color: AppColors.surfaceContainerHighest),
-              Expanded(child: active.contentBuilder(context, _searchQuery)),
+                const VerticalDivider(width: 1, color: AppColors.surfaceContainerHighest),
+              Expanded(child: widget.child),
             ],
           ),
         );
@@ -278,13 +241,13 @@ class _AppShellState extends State<AppShell> {
 
 class _Sidebar extends StatelessWidget {
   final List<AppDestination> destinations;
-  final int selectedIndex;
-  final ValueChanged<int> onSelected;
+  final AppDestination active;
+  final ValueChanged<AppDestination> onSelected;
   final VoidCallback onLogout;
 
   const _Sidebar({
     required this.destinations,
-    required this.selectedIndex,
+    required this.active,
     required this.onSelected,
     required this.onLogout,
   });
@@ -304,12 +267,12 @@ class _Sidebar extends StatelessWidget {
             child: ListView(
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
               children: [
-                for (var i = 0; i < destinations.length; i++)
+                for (final destination in destinations)
                   _SidebarItem(
-                    icon: destinations[i].icon,
-                    label: destinations[i].label,
-                    selected: i == selectedIndex,
-                    onTap: () => onSelected(i),
+                    icon: destination.icon,
+                    label: destination.label,
+                    selected: destination.id == active.id,
+                    onTap: () => onSelected(destination),
                   ),
               ],
             ),
@@ -354,34 +317,26 @@ class _SidebarItem extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Material(
-        color: selected
-            ? AppColors.primaryContainer.withOpacity(0.10)
-            : Colors.transparent,
+        color: selected ? AppColors.primaryContainer.withOpacity(0.10) : Colors.transparent,
         borderRadius: BorderRadius.circular(AppRadius.standard),
         child: InkWell(
           borderRadius: BorderRadius.circular(AppRadius.standard),
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.md, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 12),
             child: Row(
               children: [
                 Icon(
                   icon,
                   size: 20,
-                  color: iconColor ??
-                      (selected
-                          ? AppColors.primaryContainer
-                          : AppColors.outline),
+                  color: iconColor ?? (selected ? AppColors.primaryContainer : AppColors.outline),
                 ),
                 const SizedBox(width: AppSpacing.md),
                 Text(
                   label,
                   style: AppTextStyles.bodySm.copyWith(
-                    color: iconColor ??
-                        (selected
-                            ? AppColors.primaryContainer
-                            : AppColors.onSurface),
+                    color:
+                        iconColor ?? (selected ? AppColors.primaryContainer : AppColors.onSurface),
                     fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
                   ),
                 ),
@@ -441,8 +396,7 @@ class _ProfileMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<AuthBloc, AuthState>(
-      buildWhen: (previous, current) =>
-          previous.currentUser != current.currentUser,
+      buildWhen: (previous, current) => previous.currentUser != current.currentUser,
       builder: (context, state) {
         final name = state.currentUser?.fullName ?? '';
         final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';

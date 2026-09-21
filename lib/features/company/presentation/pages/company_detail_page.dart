@@ -1,44 +1,55 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../../core/navigation/app_router.dart';
+import '../../../../core/navigation/side_panel.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../auth/domain/entities/user_role.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
+import '../../../auth/presentation/bloc/auth_event.dart';
 import '../../../auth/presentation/bloc/auth_state.dart';
+import '../../../subscription/domain/entities/subscription_plan.dart';
+import '../../../subscription/presentation/bloc/subscription_bloc.dart';
+import '../../../subscription/presentation/bloc/subscription_event.dart';
+import '../../../subscription/presentation/bloc/subscription_state.dart';
 import '../../domain/entities/company.dart';
 import '../../domain/entities/company_status.dart';
 import '../bloc/company_bloc.dart';
 import '../bloc/company_event.dart';
 import '../bloc/company_state.dart';
-import 'edit_company_page.dart';
+import '../widgets/company_managers_preview.dart';
 
 /// Matches the reference company detail mockups' "General Information" +
-/// "Primary Contact" + "Subscription Details" sections.
+/// "Primary Contact" + "Subscription Details" sections, extended with:
 ///
-/// Dropped from the mockups (not in cahier des charges 5.2, and each
-/// would need infrastructure/queries beyond plain CRUD+list): Quick
-/// Stats (Total Users/Active Bookings/Service Utilization - these belong
-/// to features that don't exist yet), Admin History/audit log, "View
-/// Invoices" (billing isn't built).
+/// - A "Gestionnaires" section showing the company's manager count, with
+///   a "Voir plus" link that opens the full list in a [showSidePanel]
+///   overlay (desktop) / full-screen-with-back-arrow (mobile) instead of
+///   navigating away - the underlying company detail page never
+///   disappears on desktop.
+/// - An inline "Assigner un plan" picker in the "Abonnement" section,
+///   shown ONLY when the company currently has no plan - visible to
+///   Admin and Super Admin alike (both roles can set an *initial* plan;
+///   changing an already-assigned plan stays Super-Admin-only via
+///   `EditCompanyPage`, enforced server-side in
+///   `company.assign-subscription-plan`).
 ///
-/// Split into two widgets on purpose:
-/// - [CompanyDetailContent] has no `Scaffold`/`AppBar` - safe to embed
-///   directly as `AppShell` content (this is what an Admin's "Entreprises"
-///   destination uses for their own single company).
-/// - [CompanyDetailPage] is a thin `Scaffold` wrapper around it, for
-///   standalone push navigation (this is what `CompaniesListPage` pushes
-///   to when a Super Admin taps a row).
+/// Split into two widgets:
+/// - [CompanyDetailContent] has no `Scaffold`/`AppBar` - rendered at
+///   `/companies` (Admin) or `/companies/:companyId` (Super Admin)
+///   inside `AppShell`'s ShellRoute.
+/// - [CompanyDetailPage] is a thin `Scaffold` wrapper, kept for any
+///   future standalone-push use case; nothing in the router currently
+///   routes to it directly.
 ///
-/// Embedding [CompanyDetailPage] (with its own `Scaffold`) directly as
-/// `AppShell` content used to be exactly this file's bug: a `Scaffold`
-/// nested inside another `Scaffold`'s body (itself inside a `Row`'s
-/// `Expanded`) is a well-known source of "Cannot hit test a render box
-/// with no size" / mouse-tracker assertion failures in Flutter - nested
-/// Scaffolds don't compose cleanly without explicit sizing. Always reach
-/// for [CompanyDetailContent] when embedding, [CompanyDetailPage] only
-/// when pushing a real new route.
+/// Every non-flex button here is wrapped in `IntrinsicWidth` - a Flutter
+/// (web/DDC) layout quirk where `OutlinedButton`/`FilledButton`'s
+/// internal `_InputPadding` can't handle the unbounded width Row's first
+/// measurement pass gives non-flex children, causing "BoxConstraints
+/// forces an infinite width" crashes. Do not remove these wrappers.
 class CompanyDetailPage extends StatelessWidget {
   final String companyId;
 
@@ -64,12 +75,39 @@ class CompanyDetailContent extends StatefulWidget {
 }
 
 class _CompanyDetailContentState extends State<CompanyDetailContent> {
+  String? _planToAssign;
+
   @override
   void initState() {
     super.initState();
     context
         .read<CompanyBloc>()
         .add(CompanyDetailLoadRequested(companyId: widget.companyId));
+    // Manager count for this company - reuses the exact same AuthBloc
+    // mechanism the "Gestionnaires" sidebar tab uses, just pointed at
+    // THIS page's company rather than (necessarily) the viewer's own.
+    context
+        .read<AuthBloc>()
+        .add(AuthCompanyUsersLoadRequested(companyId: widget.companyId));
+    // Needed for the "Assigner un plan" picker, which can't know ahead
+    // of time whether the company will turn out to have no plan yet.
+    context.read<SubscriptionBloc>().add(const SubscriptionListLoadRequested());
+  }
+
+  void _openManagers(BuildContext context, Company company) {
+    showSidePanel(
+      context: context,
+      title: 'Gestionnaires - ${company.name}',
+      contentBuilder: (_) => CompanyManagersPreview(companyId: company.id),
+    );
+  }
+
+  void _assignPlan(Company company) {
+    if (_planToAssign == null) return;
+    context.read<CompanyBloc>().add(
+          CompanyPlanAssignRequested(
+              companyId: company.id, subscriptionPlanId: _planToAssign),
+        );
   }
 
   @override
@@ -116,15 +154,13 @@ class _CompanyDetailContentState extends State<CompanyDetailContent> {
                         ],
                       ),
                     ),
-                    OutlinedButton.icon(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              EditCompanyPage(companyId: company.id),
-                        ),
+                    IntrinsicWidth(
+                      child: OutlinedButton.icon(
+                        onPressed: () =>
+                            context.push(AppRoutes.companyEdit(company.id)),
+                        icon: const Icon(Icons.edit_outlined, size: 16),
+                        label: const Text('Modifier'),
                       ),
-                      icon: const Icon(Icons.edit_outlined, size: 16),
-                      label: const Text('Modifier'),
                     ),
                   ],
                 ),
@@ -149,12 +185,92 @@ class _CompanyDetailContentState extends State<CompanyDetailContent> {
                 ),
                 const SizedBox(height: AppSpacing.md),
                 _Section(
+                  title: 'Gestionnaires',
+                  icon: Icons.people_outline,
+                  child: BlocBuilder<AuthBloc, AuthState>(
+                    buildWhen: (previous, current) =>
+                        previous.companyUsers != current.companyUsers ||
+                        previous.companyUsersStatus !=
+                            current.companyUsersStatus,
+                    builder: (context, authState) {
+                      final isLoadingCount = authState.companyUsersStatus ==
+                              CompanyUsersStatus.loading &&
+                          authState.companyUsers.isEmpty;
+                      return Row(
+                        children: [
+                          Expanded(
+                            child: isLoadingCount
+                                ? Text('Chargement...',
+                                    style: AppTextStyles.bodyMd)
+                                : Text(
+                                    '${authState.companyUsers.length} gestionnaire(s)',
+                                    style: AppTextStyles.bodyMd,
+                                  ),
+                          ),
+                          TextButton(
+                            onPressed: () => _openManagers(context, company),
+                            child: const Text('Voir plus'),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                _Section(
                   title: 'Abonnement',
                   icon: Icons.workspace_premium_outlined,
-                  child: _InfoRow(
-                    label: 'Plan actuel',
-                    value: company.subscriptionPlanId ?? 'Aucun plan assigne',
-                  ),
+                  child: company.subscriptionPlanId != null
+                      ? _InfoRow(
+                          label: 'Plan actuel',
+                          value: company.subscriptionPlanId!)
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Aucun plan assigne.',
+                                style: AppTextStyles.bodyMd),
+                            const SizedBox(height: AppSpacing.md),
+                            BlocBuilder<SubscriptionBloc, SubscriptionState>(
+                              buildWhen: (previous, current) =>
+                                  previous.plans != current.plans,
+                              builder: (context, subState) {
+                                return Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: DropdownButtonFormField<String>(
+                                        value: _planToAssign,
+                                        decoration: const InputDecoration(
+                                          isDense: true,
+                                          hintText: 'Choisir un plan',
+                                        ),
+                                        items: [
+                                          for (final SubscriptionPlan plan
+                                              in subState.plans)
+                                            DropdownMenuItem(
+                                              value: plan.id,
+                                              child: Text(plan.name),
+                                            ),
+                                        ],
+                                        onChanged: (value) => setState(
+                                            () => _planToAssign = value),
+                                      ),
+                                    ),
+                                    const SizedBox(width: AppSpacing.md),
+                                    IntrinsicWidth(
+                                      child: FilledButton(
+                                        onPressed: _planToAssign == null
+                                            ? null
+                                            : () => _assignPlan(company),
+                                        child: const Text('Assigner'),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+                          ],
+                        ),
                 ),
                 if (isSuperAdmin) ...[
                   const SizedBox(height: AppSpacing.lg),
@@ -169,24 +285,26 @@ class _CompanyDetailContentState extends State<CompanyDetailContent> {
                         ),
                       ),
                       const SizedBox(width: AppSpacing.md),
-                      FilledButton(
-                        style: FilledButton.styleFrom(
-                          backgroundColor:
-                              company.status == CompanyStatus.active
-                                  ? AppColors.error
-                                  : AppColors.primaryContainer,
-                        ),
-                        onPressed: () => context.read<CompanyBloc>().add(
-                              CompanyStatusUpdateRequested(
-                                companyId: company.id,
-                                activate:
-                                    company.status != CompanyStatus.active,
+                      IntrinsicWidth(
+                        child: FilledButton(
+                          style: FilledButton.styleFrom(
+                            backgroundColor:
+                                company.status == CompanyStatus.active
+                                    ? AppColors.error
+                                    : AppColors.primaryContainer,
+                          ),
+                          onPressed: () => context.read<CompanyBloc>().add(
+                                CompanyStatusUpdateRequested(
+                                  companyId: company.id,
+                                  activate:
+                                      company.status != CompanyStatus.active,
+                                ),
                               ),
-                            ),
-                        child: Text(
-                          company.status == CompanyStatus.active
-                              ? 'Desactiver'
-                              : 'Reactiver',
+                          child: Text(
+                            company.status == CompanyStatus.active
+                                ? 'Desactiver'
+                                : 'Reactiver',
+                          ),
                         ),
                       ),
                     ],

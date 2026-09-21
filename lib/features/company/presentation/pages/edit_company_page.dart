@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
@@ -20,22 +21,13 @@ import '../bloc/company_bloc.dart';
 import '../bloc/company_event.dart';
 import '../bloc/company_state.dart';
 
-/// Matches the reference "Modifier l'Entreprise" mockups' General
-/// Information + Primary Contact sections. Two deliberate differences:
+/// Matches the reference "Modifier l'Entreprise" mockups. Reached only
+/// via `/companies/:companyId/edit`, a full-screen route outside
+/// `AppShell`'s ShellRoute.
 ///
-/// 1. No "Company Logo" field/upload - not in cahier des charges 5.2,
-///    and would need an entirely new Storage bucket/permissions/upload
-///    flow beyond CRUD+list.
-/// 2. "Enterprise Status" toggle and "Subscription Plan" dropdown are
-///    only shown to Super Admin - both are backed by separate,
-///    Super-Admin-only Cloud Function resources (`company.update-status`,
-///    `company.assign-subscription-plan`); an Admin editing their own
-///    company only ever sees/touches the profile fields.
-///
-/// One "Sauvegarder" button still fires all changed operations (profile,
-/// and - Super Admin only - status/plan) in one go, matching the
-/// mockups' single-save UX even though the backend treats them as three
-/// distinct privileged calls.
+/// "Enterprise Status" toggle and "Subscription Plan" dropdown are only
+/// shown to Super Admin - both are backed by separate, Super-Admin-only
+/// Cloud Function resources.
 class EditCompanyPage extends StatefulWidget {
   final String companyId;
 
@@ -128,7 +120,7 @@ class _EditCompanyPageState extends State<EditCompanyPage> {
       }
     }
 
-    Navigator.of(context).pop();
+    context.pop();
   }
 
   @override
@@ -265,9 +257,11 @@ class _EditCompanyPageState extends State<EditCompanyPage> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('Annuler'),
+                      IntrinsicWidth(
+                        child: TextButton(
+                          onPressed: () => context.pop(),
+                          child: const Text('Annuler'),
+                        ),
                       ),
                       const SizedBox(width: AppSpacing.md),
                       SizedBox(

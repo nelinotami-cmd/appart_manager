@@ -34,3 +34,29 @@ class SubscriptionPlanAttributes {
   static const String monthlyPrice = 'monthlyPrice';
   static const String enabledFeatures = 'enabledFeatures';
 }
+
+class NotificationTemplateAttributes {
+  NotificationTemplateAttributes._();
+
+  static const String name = 'name';
+  static const String message = 'message';
+  static const String channel = 'channel';
+}
+
+class NotificationLogAttributes {
+  NotificationLogAttributes._();
+
+  static const String companyId = 'companyId';
+  static const String recipientLabel = 'recipientLabel';
+  static const String channel = 'channel';
+  static const String subject = 'subject';
+  static const String message = 'message';
+  static const String status = 'status';
+  static const String errorMessage = 'errorMessage';
+}
+
+class NotificationPreferencesAttributes {
+  NotificationPreferencesAttributes._();
+
+  static const String mutedTemplateIds = 'mutedTemplateIds';
+}

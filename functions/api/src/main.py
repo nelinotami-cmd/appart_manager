@@ -29,6 +29,11 @@ features/resources:
   subscription.create-plan
   subscription.update-plan
   subscription.delete-plan
+  notification.create-template
+  notification.update-template
+  notification.delete-template
+  notification.send-test-email
+  notification.set-my-preferences
 
 Adding a new feature (e.g. "company"): write its handler function(s)
 below (or, once this file gets large, in a sibling module under
@@ -53,10 +58,13 @@ that check generically because different resources need different rules
 
 Current scopes needed by this function's dynamic API key (the union of
 every resource's individual needs so far): documents.read,
-documents.write, users.write, teams.write. Every handler below calls
-document-level operations specifically (create_document, get_document,
-etc.) - `databases.*` scopes gate schema/collection management, which
-nothing here performs at runtime, and won't satisfy these calls. See
+documents.write, users.write, teams.write, messages.write (the last one
+new for notification.send-test-email, which calls Appwrite's Messaging
+API - verified against Appwrite's own API reference, not assumed).
+Every handler below calls document-level operations specifically
+(create_document, get_document, etc.) - `databases.*` scopes gate
+schema/collection management, which nothing here performs at runtime,
+and won't satisfy these calls. See
 appwrite_setup.md.
 """
 
@@ -68,6 +76,7 @@ from appwrite.client import Client
 from appwrite.services.databases import Databases
 from appwrite.services.users import Users
 from appwrite.services.teams import Teams
+from appwrite.services.messaging import Messaging
 from appwrite.id import ID
 from appwrite.permission import Permission
 from appwrite.role import Role
@@ -88,6 +97,9 @@ _REQUIRED_ENV_VARS = [
     "APPWRITE_COLLECTION_COMPANIES",
     "APPWRITE_COLLECTION_USER_PROFILES",
     "APPWRITE_COLLECTION_SUBSCRIPTION_PLANS",
+    "APPWRITE_COLLECTION_NOTIFICATION_TEMPLATES",
+    "APPWRITE_COLLECTION_NOTIFICATION_LOGS",
+    "APPWRITE_COLLECTION_NOTIFICATION_PREFERENCES",
 ]
 
 # Populated by `_load_env()` on each invocation, before any handler runs.
@@ -95,6 +107,9 @@ DATABASE_ID = None
 COMPANIES_COLLECTION_ID = None
 USER_PROFILES_COLLECTION_ID = None
 SUBSCRIPTION_PLANS_COLLECTION_ID = None
+NOTIFICATION_TEMPLATES_COLLECTION_ID = None
+NOTIFICATION_LOGS_COLLECTION_ID = None
+NOTIFICATION_PREFERENCES_COLLECTION_ID = None
 
 
 def _load_env():
@@ -109,6 +124,8 @@ def _load_env():
     """
     global DATABASE_ID, COMPANIES_COLLECTION_ID, USER_PROFILES_COLLECTION_ID
     global SUBSCRIPTION_PLANS_COLLECTION_ID
+    global NOTIFICATION_TEMPLATES_COLLECTION_ID, NOTIFICATION_LOGS_COLLECTION_ID
+    global NOTIFICATION_PREFERENCES_COLLECTION_ID
     missing = [key for key in _REQUIRED_ENV_VARS if not os.environ.get(key)]
     if missing:
         return missing
@@ -116,6 +133,13 @@ def _load_env():
     COMPANIES_COLLECTION_ID = os.environ["APPWRITE_COLLECTION_COMPANIES"]
     USER_PROFILES_COLLECTION_ID = os.environ["APPWRITE_COLLECTION_USER_PROFILES"]
     SUBSCRIPTION_PLANS_COLLECTION_ID = os.environ["APPWRITE_COLLECTION_SUBSCRIPTION_PLANS"]
+    NOTIFICATION_TEMPLATES_COLLECTION_ID = os.environ[
+        "APPWRITE_COLLECTION_NOTIFICATION_TEMPLATES"
+    ]
+    NOTIFICATION_LOGS_COLLECTION_ID = os.environ["APPWRITE_COLLECTION_NOTIFICATION_LOGS"]
+    NOTIFICATION_PREFERENCES_COLLECTION_ID = os.environ[
+        "APPWRITE_COLLECTION_NOTIFICATION_PREFERENCES"
+    ]
     return []
 
 
@@ -275,6 +299,7 @@ def _handle_register_company_and_admin(context, body):
             permissions=[
                 Permission.read(Role.team(company_id)),
                 Permission.read(Role.user(user_id)),
+                Permission.read(Role.label("superAdmin")),
                 Permission.update(Role.team(company_id, "admin")),
                 Permission.update(Role.user(user_id)),
             ],
@@ -397,6 +422,7 @@ def _handle_create_gestionnaire_account(context, body):
             permissions=[
                 Permission.read(Role.team(company_id)),
                 Permission.read(Role.user(user_id)),
+                Permission.read(Role.label("superAdmin")),
                 Permission.update(Role.team(company_id, "admin")),
                 Permission.update(Role.user(user_id)),
             ],
@@ -772,10 +798,16 @@ def _handle_update_company_status(context, body):
 # ---------------------------------------------------------------------------
 # company.assign-subscription-plan
 # ---------------------------------------------------------------------------
-# Super Admin only. Cahier des charges 5.2: "Liaison entreprise <-> plan
-# d'abonnement." `subscriptionPlanId` is stored as-is with no validation
-# against an actual plan entity - section 5.3 (Abonnements) doesn't exist
-# yet. Revisit once 5.3 is built (at minimum: verify the plan id exists).
+# Cahier des charges 5.2: "Liaison entreprise <-> plan d'abonnement."
+# `subscriptionPlanId` is stored as-is with no validation against an
+# actual plan entity's existence beyond the get_document check below.
+#
+# Super Admin may assign/change a plan on any company at any time. Admin
+# may only set an INITIAL plan for their OWN company, and only while it
+# currently has none - once a plan is assigned, changing it is
+# Super-Admin-only. This mirrors the Flutter side (an inline picker on
+# the company detail page, shown only when there's no current plan) but
+# is enforced here independently, not just hidden client-side.
 #
 # Expected body: {"companyId": str, "subscriptionPlanId": str | None}
 # Response 200: the updated companies document.
@@ -800,9 +832,30 @@ def _handle_assign_subscription_plan(context, body):
     except AppwriteException:
         return context.res.json({"message": "Profil de l'appelant introuvable."}, 403)
 
-    if caller_profile.data.get("role") != "superAdmin":
+    try:
+        target_company = databases.get_document(
+            database_id=DATABASE_ID,
+            collection_id=COMPANIES_COLLECTION_ID,
+            document_id=target_company_id,
+        )
+    except AppwriteException:
+        return context.res.json({"message": "Entreprise introuvable."}, 404)
+
+    is_super_admin = caller_profile.data.get("role") == "superAdmin"
+    is_owning_admin_setting_initial_plan = (
+        caller_profile.data.get("role") == "admin"
+        and caller_profile.data.get("companyId") == target_company_id
+        and target_company.data.get("subscriptionPlanId") is None
+    )
+    if not (is_super_admin or is_owning_admin_setting_initial_plan):
         return context.res.json(
-            {"message": "Seul un Super Admin peut assigner un plan d'abonnement."}, 403
+            {
+                "message": (
+                    "Seul un Super Admin peut modifier un plan deja assigne. "
+                    "Un Admin peut assigner un premier plan si l'entreprise n'en a pas."
+                )
+            },
+            403,
         )
 
     try:
@@ -1017,6 +1070,422 @@ def _handle_delete_subscription_plan(context, body):
 
 
 # ---------------------------------------------------------------------------
+# Notification helpers (shared by every notification.* handler below, and
+# meant to be called by 5.8/5.10 later too - not notification.*-specific).
+# ---------------------------------------------------------------------------
+def _send_email(client, *, user_id, subject, content, scheduled_at=None):
+    """Sends (or, with `scheduled_at` set, schedules) an email via
+    Appwrite Messaging to an EXISTING Appwrite user - `users: [user_id]`,
+    NOT a raw email address. Appwrite Messaging is built entirely on
+    Targets, and every Target is tied to a Users account; there is no
+    supported way to email an address with no corresponding Appwrite
+    user (verified against Appwrite's own docs - no confirmed path
+    found, including in Appwrite's own community threads asking this
+    exact question). For company notifications (Admin/Gestionnaire -
+    always real Appwrite users, since they signed up with email +
+    password), this is sufficient. If a future feature (5.8) needs to
+    email a booking guest who isn't a platform user at all, that needs
+    its own design - not solved here.
+
+    Requires an SMTP provider (Mailgun/Sendgrid/etc.) configured in the
+    Appwrite Console first - see appwrite_setup.md. `scheduled_at`, when
+    given, must be an ISO 8601 string in the future (Appwrite's own
+    validation, not enforced here).
+
+    Returns (success: bool, error_message: str | None) - never raises,
+    so a failed send never crashes the caller; every caller logs the
+    outcome via `_write_notification_log` regardless.
+    """
+    messaging = Messaging(client)
+    try:
+        messaging.create_email(
+            message_id=ID.unique(),
+            subject=subject,
+            content=content,
+            users=[user_id],
+            scheduled_at=scheduled_at,
+        )
+        return True, None
+    except AppwriteException as e:
+        return False, (e.message or str(e))
+
+
+def _write_notification_log(
+    context,
+    databases,
+    *,
+    company_id,
+    recipient_label,
+    channel,
+    subject,
+    message,
+    status,
+    error_message=None,
+):
+    """Writes one NotificationLog entry. `company_id` may be `None` (a
+    Super Admin's own test-send - Super Admin has no company). Never
+    raises - a logging failure must never fail the caller's actual send/
+    schedule operation, which has already happened by the time this
+    runs; any failure here is only ever reported via `context.error`.
+    """
+    permissions = [Permission.read(Role.label("superAdmin"))]
+    if company_id:
+        permissions.append(Permission.read(Role.team(company_id)))
+    try:
+        databases.create_document(
+            database_id=DATABASE_ID,
+            collection_id=NOTIFICATION_LOGS_COLLECTION_ID,
+            document_id=ID.unique(),
+            data={
+                "companyId": company_id,
+                "recipientLabel": recipient_label,
+                "channel": channel,
+                "subject": subject,
+                "message": message,
+                "status": status,
+                "errorMessage": error_message,
+            },
+            permissions=permissions,
+        )
+    except AppwriteException as e:
+        context.error(f"Failed to write notification log: {e}")
+
+
+def _get_notification_recipients(databases, *, company_id, template_id):
+    """Resolves who should receive a notification for `template_id` at
+    `company_id` right now: the company's Admin (unless they've muted
+    this specific template) plus every active Gestionnaire (always
+    included - no opt-out for Gestionnaires, per explicit project
+    instruction: "no roadblock" for them).
+
+    NOT YET CALLED by anything in this file - built ahead of 5.8/5.10,
+    which will call this once they exist, passing whichever template
+    they're about to send for a given event. Returns a list of Appwrite
+    user ids, ready to pass to `_send_email` one at a time.
+    """
+    try:
+        members = databases.list_documents(
+            database_id=DATABASE_ID,
+            collection_id=USER_PROFILES_COLLECTION_ID,
+            queries=[
+                Query.equal("companyId", company_id),
+                Query.equal("status", "active"),
+                Query.limit(500),
+            ],
+        )
+    except AppwriteException:
+        return []
+
+    recipients = []
+    for member in members.documents:
+        role = member.data.get("role")
+        if role == "gestionnaire":
+            recipients.append(member.id)
+        elif role == "admin":
+            try:
+                prefs = databases.get_document(
+                    database_id=DATABASE_ID,
+                    collection_id=NOTIFICATION_PREFERENCES_COLLECTION_ID,
+                    document_id=member.id,
+                )
+                muted = prefs.data.get("mutedTemplateIds") or []
+            except AppwriteException:
+                muted = []
+            if template_id not in muted:
+                recipients.append(member.id)
+    return recipients
+
+
+# ---------------------------------------------------------------------------
+# notification.create-template
+# ---------------------------------------------------------------------------
+# Admin or Super Admin. Cahier des charges 5.4: "Creation de templates de
+# notification (message, canal)." Readable by any authenticated user -
+# permission set here, not at the collection level (same reasoning as
+# subscription_plans: not sensitive, and every role may eventually need
+# to read a template once 5.8/5.10 reference one).
+#
+# Expected body: {"name": str, "message": str, "channel": "push"|"email"}
+# Response 200: the created notification_templates document.
+_CREATE_NOTIFICATION_TEMPLATE_REQUIRED_FIELDS = ["name", "message", "channel"]
+
+
+def _handle_create_notification_template(context, body):
+    caller_id = context.req.headers.get("x-appwrite-user-id", "")
+    if not caller_id:
+        return context.res.json({"message": "Authentification requise."}, 401)
+
+    missing = [f for f in _CREATE_NOTIFICATION_TEMPLATE_REQUIRED_FIELDS if not body.get(f)]
+    if missing:
+        return context.res.json({"message": f"Champs manquants: {', '.join(missing)}"}, 400)
+    if body["channel"] not in ("push", "email"):
+        return context.res.json({"message": "Canal invalide."}, 400)
+
+    client = _client(context)
+    databases = Databases(client)
+
+    try:
+        caller_profile = databases.get_document(
+            database_id=DATABASE_ID,
+            collection_id=USER_PROFILES_COLLECTION_ID,
+            document_id=caller_id,
+        )
+    except AppwriteException:
+        return context.res.json({"message": "Profil de l'appelant introuvable."}, 403)
+
+    if caller_profile.data.get("role") not in ("admin", "superAdmin"):
+        return context.res.json(
+            {"message": "Seul un Admin ou Super Admin peut creer un modele."}, 403
+        )
+
+    try:
+        created = databases.create_document(
+            database_id=DATABASE_ID,
+            collection_id=NOTIFICATION_TEMPLATES_COLLECTION_ID,
+            document_id=ID.unique(),
+            data={
+                "name": body["name"],
+                "message": body["message"],
+                "channel": body["channel"],
+            },
+            permissions=[Permission.read(Role.users())],
+        )
+        return context.res.json(_doc_to_dict(created), 200)
+    except AppwriteException as e:
+        context.error(str(e))
+        return context.res.json({"message": e.message or "Echec de la creation du modele."}, 400)
+
+
+# ---------------------------------------------------------------------------
+# notification.update-template
+# ---------------------------------------------------------------------------
+# Admin or Super Admin.
+#
+# Expected body: {"templateId": str, "name": str, "message": str,
+#                 "channel": "push"|"email"}
+# Response 200: the updated notification_templates document.
+_UPDATE_NOTIFICATION_TEMPLATE_REQUIRED_FIELDS = ["templateId", "name", "message", "channel"]
+
+
+def _handle_update_notification_template(context, body):
+    caller_id = context.req.headers.get("x-appwrite-user-id", "")
+    if not caller_id:
+        return context.res.json({"message": "Authentification requise."}, 401)
+
+    missing = [f for f in _UPDATE_NOTIFICATION_TEMPLATE_REQUIRED_FIELDS if not body.get(f)]
+    if missing:
+        return context.res.json({"message": f"Champs manquants: {', '.join(missing)}"}, 400)
+    if body["channel"] not in ("push", "email"):
+        return context.res.json({"message": "Canal invalide."}, 400)
+
+    client = _client(context)
+    databases = Databases(client)
+
+    try:
+        caller_profile = databases.get_document(
+            database_id=DATABASE_ID,
+            collection_id=USER_PROFILES_COLLECTION_ID,
+            document_id=caller_id,
+        )
+    except AppwriteException:
+        return context.res.json({"message": "Profil de l'appelant introuvable."}, 403)
+
+    if caller_profile.data.get("role") not in ("admin", "superAdmin"):
+        return context.res.json(
+            {"message": "Seul un Admin ou Super Admin peut modifier un modele."}, 403
+        )
+
+    try:
+        updated = databases.update_document(
+            database_id=DATABASE_ID,
+            collection_id=NOTIFICATION_TEMPLATES_COLLECTION_ID,
+            document_id=body["templateId"],
+            data={
+                "name": body["name"],
+                "message": body["message"],
+                "channel": body["channel"],
+            },
+        )
+        return context.res.json(_doc_to_dict(updated), 200)
+    except AppwriteException as e:
+        context.error(str(e))
+        return context.res.json({"message": e.message or "Echec de la mise a jour du modele."}, 400)
+
+
+# ---------------------------------------------------------------------------
+# notification.delete-template
+# ---------------------------------------------------------------------------
+# Admin or Super Admin. Real deletion, matching cahier des charges 5.4's
+# CRUD scope - no soft-deactivation concept here, same reasoning as
+# subscription plans.
+#
+# Expected body: {"templateId": str}
+# Response 200: {"status": "deleted"}
+def _handle_delete_notification_template(context, body):
+    caller_id = context.req.headers.get("x-appwrite-user-id", "")
+    if not caller_id:
+        return context.res.json({"message": "Authentification requise."}, 401)
+
+    template_id = body.get("templateId")
+    if not template_id:
+        return context.res.json({"message": "templateId requis."}, 400)
+
+    client = _client(context)
+    databases = Databases(client)
+
+    try:
+        caller_profile = databases.get_document(
+            database_id=DATABASE_ID,
+            collection_id=USER_PROFILES_COLLECTION_ID,
+            document_id=caller_id,
+        )
+    except AppwriteException:
+        return context.res.json({"message": "Profil de l'appelant introuvable."}, 403)
+
+    if caller_profile.data.get("role") not in ("admin", "superAdmin"):
+        return context.res.json(
+            {"message": "Seul un Admin ou Super Admin peut supprimer un modele."}, 403
+        )
+
+    try:
+        databases.delete_document(
+            database_id=DATABASE_ID,
+            collection_id=NOTIFICATION_TEMPLATES_COLLECTION_ID,
+            document_id=template_id,
+        )
+        return context.res.json({"status": "deleted"}, 200)
+    except AppwriteException as e:
+        context.error(str(e))
+        return context.res.json({"message": e.message or "Echec de la suppression du modele."}, 400)
+
+
+# ---------------------------------------------------------------------------
+# notification.send-test-email
+# ---------------------------------------------------------------------------
+# Any authenticated user - sends ONLY to themselves (never a parameter,
+# always `x-appwrite-user-id`), purely to verify the SMTP + `_send_email`
+# pipeline actually works end to end before any real feature depends on
+# it. Writes a NotificationLog entry either way (sent or failed).
+#
+# Expected body: {"subject": str, "message": str}
+# Response 200: {"status": "sent"}
+_SEND_TEST_EMAIL_REQUIRED_FIELDS = ["subject", "message"]
+
+
+def _handle_send_test_email(context, body):
+    caller_id = context.req.headers.get("x-appwrite-user-id", "")
+    if not caller_id:
+        return context.res.json({"message": "Authentification requise."}, 401)
+
+    missing = [f for f in _SEND_TEST_EMAIL_REQUIRED_FIELDS if not body.get(f)]
+    if missing:
+        return context.res.json({"message": f"Champs manquants: {', '.join(missing)}"}, 400)
+
+    client = _client(context)
+    databases = Databases(client)
+
+    try:
+        caller_profile = databases.get_document(
+            database_id=DATABASE_ID,
+            collection_id=USER_PROFILES_COLLECTION_ID,
+            document_id=caller_id,
+        )
+    except AppwriteException:
+        return context.res.json({"message": "Profil de l'appelant introuvable."}, 403)
+
+    success, error_message = _send_email(
+        client,
+        user_id=caller_id,
+        subject=body["subject"],
+        content=body["message"],
+    )
+
+    _write_notification_log(
+        context,
+        databases,
+        company_id=caller_profile.data.get("companyId"),
+        recipient_label=caller_profile.data.get("email") or caller_id,
+        channel="email",
+        subject=body["subject"],
+        message=body["message"],
+        status="sent" if success else "failed",
+        error_message=error_message,
+    )
+
+    if not success:
+        return context.res.json({"message": error_message or "Echec de l'envoi."}, 400)
+    return context.res.json({"status": "sent"}, 200)
+
+
+# ---------------------------------------------------------------------------
+# notification.set-my-preferences
+# ---------------------------------------------------------------------------
+# Admin only (Gestionnaires have no opt-out at all, per explicit project
+# instruction - always receive, no preferences document, no UI). Always
+# operates on the CALLER's own id (`x-appwrite-user-id`), never a
+# parameter - there is deliberately no way to set another user's
+# preferences through this resource. Upserts: creates the preferences
+# document on first call for a given user, updates it on every call
+# after.
+#
+# Expected body: {"mutedTemplateIds": [str, ...]}
+# Response 200: the created/updated notification_preferences document.
+def _handle_set_my_preferences(context, body):
+    caller_id = context.req.headers.get("x-appwrite-user-id", "")
+    if not caller_id:
+        return context.res.json({"message": "Authentification requise."}, 401)
+
+    muted_template_ids = body.get("mutedTemplateIds")
+    if not isinstance(muted_template_ids, list):
+        return context.res.json({"message": "mutedTemplateIds doit etre une liste."}, 400)
+
+    client = _client(context)
+    databases = Databases(client)
+
+    try:
+        caller_profile = databases.get_document(
+            database_id=DATABASE_ID,
+            collection_id=USER_PROFILES_COLLECTION_ID,
+            document_id=caller_id,
+        )
+    except AppwriteException:
+        return context.res.json({"message": "Profil de l'appelant introuvable."}, 403)
+
+    if caller_profile.data.get("role") != "admin":
+        return context.res.json(
+            {"message": "Seul un Admin peut configurer ses preferences de notification."}, 403
+        )
+
+    data = {"mutedTemplateIds": muted_template_ids}
+    try:
+        updated = databases.update_document(
+            database_id=DATABASE_ID,
+            collection_id=NOTIFICATION_PREFERENCES_COLLECTION_ID,
+            document_id=caller_id,
+            data=data,
+        )
+        return context.res.json(_doc_to_dict(updated), 200)
+    except AppwriteException:
+        # No document yet for this user - create it (upsert). Only
+        # readable by the user themselves; writes always go through this
+        # same resource, never a direct client write.
+        try:
+            created = databases.create_document(
+                database_id=DATABASE_ID,
+                collection_id=NOTIFICATION_PREFERENCES_COLLECTION_ID,
+                document_id=caller_id,
+                data=data,
+                permissions=[Permission.read(Role.user(caller_id))],
+            )
+            return context.res.json(_doc_to_dict(created), 200)
+        except AppwriteException as e:
+            context.error(str(e))
+            return context.res.json(
+                {"message": e.message or "Echec de la sauvegarde des preferences."}, 400
+            )
+
+
+# ---------------------------------------------------------------------------
 # Router
 # ---------------------------------------------------------------------------
 # When adding a new feature, add its handlers here too, e.g.:
@@ -1037,6 +1506,11 @@ _HANDLERS = {
     "subscription.create-plan": _handle_create_subscription_plan,
     "subscription.update-plan": _handle_update_subscription_plan,
     "subscription.delete-plan": _handle_delete_subscription_plan,
+    "notification.create-template": _handle_create_notification_template,
+    "notification.update-template": _handle_update_notification_template,
+    "notification.delete-template": _handle_delete_notification_template,
+    "notification.send-test-email": _handle_send_test_email,
+    "notification.set-my-preferences": _handle_set_my_preferences,
 }
 
 
