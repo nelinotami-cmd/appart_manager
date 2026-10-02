@@ -29,27 +29,12 @@ jobs:
         run: dart pub get
 
       - name: Build web
-        run: |
-          if [ "${GITHUB_REF_NAME}" = "preprod" ]; then
-            flutter build web --release --base-href /${GITHUB_REPOSITORY#*/}/preprod/
-          else
-            flutter build web --release --base-href /${GITHUB_REPOSITORY#*/}/
-          fi
-
-      - name: Prepare deployment
-        run: |
-          if [ "${GITHUB_REF_NAME}" = "preprod" ]; then
-            mkdir -p deploy/preprod
-            cp -r build/web/. deploy/preprod/
-          else
-            mkdir -p deploy
-            cp -r build/web/. deploy/
-          fi
+        run: flutter build web --release --base-href "/appart_manager/"
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v4
         with:
-          path: deploy
+          path: build/web
 
   deploy:
     needs: build
