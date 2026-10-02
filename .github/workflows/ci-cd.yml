@@ -5,27 +5,61 @@ on:
     branches:
       - main
       - preprod
-  pull_request:
-    branches:
-      - main
-      - preprod
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.35.1'
-          channel: 'stable'
+          channel: stable
           cache: true
 
       - name: Install dependencies
         run: dart pub get
 
       - name: Build web
-        run: flutter build web --release
+        run: |
+          if [ "${GITHUB_REF_NAME}" = "preprod" ]; then
+            flutter build web --release --base-href /${GITHUB_REPOSITORY#*/}/preprod/
+          else
+            flutter build web --release --base-href /${GITHUB_REPOSITORY#*/}/
+          fi
+
+      - name: Prepare deployment
+        run: |
+          if [ "${GITHUB_REF_NAME}" = "preprod" ]; then
+            mkdir -p deploy/preprod
+            cp -r build/web/. deploy/preprod/
+          else
+            mkdir -p deploy
+            cp -r build/web/. deploy/
+          fi
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: deploy
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
