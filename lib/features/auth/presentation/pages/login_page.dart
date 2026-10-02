@@ -1,17 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../../core/navigation/app_router.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/app_primary_button.dart';
+import '../../../../core/widgets/app_text_field.dart';
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
 import '../bloc/auth_state.dart';
-import '../widgets/app_primary_button.dart';
-import '../widgets/app_text_field.dart';
 import '../widgets/auth_shell.dart';
-import 'otp_request_page.dart';
-import 'register_company_page.dart';
-import 'temporary_authenticated_home_page.dart';
 
 /// Matches the reference `login_screen` mockup: brand mark, "Email or
 /// Phone" + "Password" fields, primary Login button, "Forgot password?"
@@ -19,9 +18,13 @@ import 'temporary_authenticated_home_page.dart';
 ///
 /// The mockup also shows "OR CONTINUING WITH / Microsoft / Okta" SSO
 /// buttons - omitted here since cahier des charges 5.1 specifies
-/// email/phone + password + OTP only, no OAuth/SSO provider; showing
-/// buttons with no backend behind them would be actively misleading
-/// rather than just incomplete.
+/// email/phone + password + OTP only, no OAuth/SSO provider.
+///
+/// Navigation is go_router-based: on successful login, `AuthBloc`
+/// emitting `authenticated` fires the router's `refreshListenable`, and
+/// its `redirect` callback sends us to `/dashboard` on its own - this
+/// page does not navigate on success itself, only on the two explicit
+/// links below.
 class LoginPage extends StatefulWidget {
   static const routeName = '/login';
 
@@ -53,17 +56,7 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    return BlocConsumer<AuthBloc, AuthState>(
-      listenWhen: (previous, current) =>
-          previous.status != current.status && current.status != AuthStatus.loading,
-      listener: (context, state) {
-        if (state.isAuthenticated) {
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (_) => const TemporaryAuthenticatedHomePage()),
-            (route) => false,
-          );
-        }
-      },
+    return BlocBuilder<AuthBloc, AuthState>(
       builder: (context, state) {
         final isLoading = state.status == AuthStatus.loading;
         return AuthShell(
@@ -73,11 +66,7 @@ class _LoginPageState extends State<LoginPage> {
               children: [
                 Text("Pas encore de compte ? ", style: AppTextStyles.bodySm),
                 GestureDetector(
-                  onTap: isLoading
-                      ? null
-                      : () => Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => const RegisterCompanyPage()),
-                          ),
+                  onTap: isLoading ? null : () => context.push(AppRoutes.registerCompany),
                   child: Text(
                     'Inscrire mon entreprise',
                     style: AppTextStyles.bodySm.copyWith(
@@ -116,9 +105,7 @@ class _LoginPageState extends State<LoginPage> {
                   GestureDetector(
                     onTap: isLoading
                         ? null
-                        : () => Navigator.of(context).push(
-                              MaterialPageRoute(builder: (_) => const OtpRequestPage()),
-                            ),
+                        : () => context.push(AppRoutes.passwordResetRequest),
                     child: Text(
                       'Mot de passe oublie ?',
                       style: AppTextStyles.bodySm.copyWith(

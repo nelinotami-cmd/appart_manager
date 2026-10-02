@@ -1,33 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../../core/navigation/app_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/app_primary_button.dart';
+import '../../../../core/widgets/app_text_field.dart';
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
 import '../bloc/auth_state.dart';
-import '../widgets/app_primary_button.dart';
-import '../widgets/app_text_field.dart';
 import '../widgets/auth_shell.dart';
 import '../widgets/otp_code_input.dart';
-import 'login_page.dart';
 
-/// Matches the reference `verify_account_screen` mockup (shield icon,
-/// "Verify your account", 6-digit box entry, "Resend Code") - extended
-/// with new-password fields, since `AuthRepository.verifyOtpAndResetPassword`
-/// needs the OTP code AND the new password in a single call (there is no
-/// separate "verify code" step on the backend before "set new password" -
-/// see `VerifyOtpParams`). No mockup was provided for a follow-up
-/// "set new password" screen, so that section below is designed in the
-/// same visual language rather than left out.
+/// Matches the reference `verify_account_screen` mockup, extended with
+/// new-password fields since `verifyOtpAndResetPassword` needs the OTP
+/// code AND the new password in a single call.
 class OtpVerifyResetPasswordPage extends StatefulWidget {
-  static const routeName = '/password-reset/verify-otp';
+  static const routeName = '/password-reset/verify';
 
-  /// Email or phone the OTP was requested for - display only (`AuthState`
-  /// only carries the delivery channel, not the raw address, to avoid
-  /// needlessly holding onto PII in Bloc state; the page that already
-  /// has the raw text passes it straight through instead).
+  /// Email or phone the OTP was requested for - display only, passed as
+  /// a query parameter (`?identifier=...`) by the router since it comes
+  /// from `OtpRequestPage`'s own text field, not from `AuthState`.
   final String identifier;
 
   const OtpVerifyResetPasswordPage({super.key, required this.identifier});
@@ -41,12 +36,6 @@ class _OtpVerifyResetPasswordPageState extends State<OtpVerifyResetPasswordPage>
   final _confirmPasswordController = TextEditingController();
   String _otp = '';
   String? _localError;
-
-  /// Distinguishes "just requested the OTP" (already unauthenticated,
-  /// nothing to react to on this page) from "successfully reset the
-  /// password" (also ends in `AuthStatus.unauthenticated` - by design,
-  /// resetting drops the OTP-derived session - but this page needs to
-  /// navigate away only for the latter).
   bool _submitted = false;
 
   @override
@@ -87,18 +76,14 @@ class _OtpVerifyResetPasswordPageState extends State<OtpVerifyResetPasswordPage>
   @override
   Widget build(BuildContext context) {
     return BlocConsumer<AuthBloc, AuthState>(
-      listenWhen: (previous, current) =>
-          _submitted && previous.status != current.status,
+      listenWhen: (previous, current) => _submitted && previous.status != current.status,
       listener: (context, state) {
         if (!_submitted) return;
         if (state.status == AuthStatus.unauthenticated && state.failure == null) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Mot de passe reinitialise. Connectez-vous.')),
           );
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (_) => const LoginPage()),
-            (route) => false,
-          );
+          context.go(AppRoutes.login);
         } else if (state.status == AuthStatus.error) {
           _submitted = false;
         }
