@@ -5,9 +5,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/error/failure.dart';
 import '../../../../core/usecase/no_params.dart';
 import '../../domain/entities/notification_template_realtime_event.dart';
-import '../../domain/repositories/notification_repository.dart' show
-    CreateTemplateParams,
-    UpdateTemplateParams;
+import '../../domain/repositories/notification_repository.dart'
+    show CreateTemplateParams, UpdateTemplateParams;
 import '../../domain/usecases/create_notification_template_usecase.dart';
 import '../../domain/usecases/delete_notification_template_usecase.dart';
 import '../../domain/usecases/get_my_notification_preferences_usecase.dart';
@@ -46,6 +45,13 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> {
 
   StreamSubscription<NotificationTemplateRealtimeEvent>? _realtimeSubscription;
 
+  // Pagination bookkeeping for logs - not part of NotificationState since
+  // it's an implementation detail of how _onLogListLoadMoreRequested
+  // decides what page to fetch next, not something the UI needs to read
+  // directly (it only needs `logsHasMore`).
+  static const _logsPageSize = 20;
+  int _logsOffset = 0;
+
   NotificationBloc({
     required this.createTemplateUseCase,
     required this.updateTemplateUseCase,
@@ -68,9 +74,11 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> {
     on<NotificationTemplateListWatchStarted>(_onListWatchStarted);
     on<NotificationTemplateListWatchStopped>(_onListWatchStopped);
     on<NotificationLogListLoadRequested>(_onLogListLoadRequested);
+    on<NotificationLogListLoadMoreRequested>(_onLogListLoadMoreRequested);
     on<NotificationTestEmailSendRequested>(_onTestEmailSendRequested);
     on<NotificationPreferencesLoadRequested>(_onPreferencesLoadRequested);
-    on<NotificationMutedTemplateIdsSetRequested>(_onMutedTemplateIdsSetRequested);
+    on<NotificationMutedTemplateIdsSetRequested>(
+        _onMutedTemplateIdsSetRequested);
     on<_TemplateListRealtimeEventReceived>(_onRealtimeEventReceived);
   }
 
@@ -78,7 +86,9 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> {
     NotificationTemplateDetailLoadRequested event,
     Emitter<NotificationState> emit,
   ) async {
-    emit(state.copyWith(detailStatus: NotificationDetailStatus.loading, clearDetailFailure: true));
+    emit(state.copyWith(
+        detailStatus: NotificationDetailStatus.loading,
+        clearDetailFailure: true));
     final result = await getTemplateByIdUseCase(event.templateId);
     result.fold(
       (exception) => emit(state.copyWith(
@@ -96,9 +106,12 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> {
     NotificationTemplateCreateRequested event,
     Emitter<NotificationState> emit,
   ) async {
-    emit(state.copyWith(detailStatus: NotificationDetailStatus.loading, clearDetailFailure: true));
+    emit(state.copyWith(
+        detailStatus: NotificationDetailStatus.loading,
+        clearDetailFailure: true));
     final result = await createTemplateUseCase(
-      CreateTemplateParams(name: event.name, message: event.message, channel: event.channel),
+      CreateTemplateParams(
+          name: event.name, message: event.message, channel: event.channel),
     );
     result.fold(
       (exception) => emit(state.copyWith(
@@ -117,7 +130,9 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> {
     NotificationTemplateUpdateRequested event,
     Emitter<NotificationState> emit,
   ) async {
-    emit(state.copyWith(detailStatus: NotificationDetailStatus.loading, clearDetailFailure: true));
+    emit(state.copyWith(
+        detailStatus: NotificationDetailStatus.loading,
+        clearDetailFailure: true));
     final result = await updateTemplateUseCase(
       UpdateTemplateParams(
         templateId: event.templateId,
@@ -135,7 +150,8 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> {
         detailStatus: NotificationDetailStatus.loaded,
         currentTemplate: template,
         templates: [
-          for (final t in state.templates) if (t.id == template.id) template else t,
+          for (final t in state.templates)
+            if (t.id == template.id) template else t,
         ],
       )),
     );
@@ -152,7 +168,8 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> {
         listFailure: Failure.fromException(exception),
       )),
       (_) => emit(state.copyWith(
-        templates: state.templates.where((t) => t.id != event.templateId).toList(),
+        templates:
+            state.templates.where((t) => t.id != event.templateId).toList(),
       )),
     );
   }
@@ -161,15 +178,17 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> {
     NotificationTemplateListLoadRequested event,
     Emitter<NotificationState> emit,
   ) async {
-    emit(state.copyWith(listStatus: NotificationListStatus.loading, clearListFailure: true));
-    final result = await listTemplatesUseCase(const ListNotificationTemplatesParams());
+    emit(state.copyWith(
+        listStatus: NotificationListStatus.loading, clearListFailure: true));
+    final result =
+        await listTemplatesUseCase(const ListNotificationTemplatesParams());
     result.fold(
       (exception) => emit(state.copyWith(
         listStatus: NotificationListStatus.error,
         listFailure: Failure.fromException(exception),
       )),
-      (templates) =>
-          emit(state.copyWith(listStatus: NotificationListStatus.loaded, templates: templates)),
+      (templates) => emit(state.copyWith(
+          listStatus: NotificationListStatus.loaded, templates: templates)),
     );
   }
 
@@ -181,15 +200,16 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> {
       add(const NotificationTemplateListLoadRequested());
       return;
     }
-    emit(state.copyWith(listStatus: NotificationListStatus.loading, clearListFailure: true));
+    emit(state.copyWith(
+        listStatus: NotificationListStatus.loading, clearListFailure: true));
     final result = await searchTemplatesUseCase(event.query.trim());
     result.fold(
       (exception) => emit(state.copyWith(
         listStatus: NotificationListStatus.error,
         listFailure: Failure.fromException(exception),
       )),
-      (templates) =>
-          emit(state.copyWith(listStatus: NotificationListStatus.loaded, templates: templates)),
+      (templates) => emit(state.copyWith(
+          listStatus: NotificationListStatus.loaded, templates: templates)),
     );
   }
 
@@ -215,14 +235,54 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> {
     NotificationLogListLoadRequested event,
     Emitter<NotificationState> emit,
   ) async {
-    emit(state.copyWith(logsStatus: NotificationLogsStatus.loading, clearLogsFailure: true));
-    final result = await listLogsUseCase(const ListNotificationLogsParams());
+    _logsOffset = 0;
+    emit(state.copyWith(
+      logsStatus: NotificationLogsStatus.loading,
+      clearLogsFailure: true,
+      logsHasMore: true,
+    ));
+    final result =
+        await listLogsUseCase(ListNotificationLogsParams(limit: _logsPageSize));
     result.fold(
       (exception) => emit(state.copyWith(
         logsStatus: NotificationLogsStatus.error,
         logsFailure: Failure.fromException(exception),
       )),
-      (logs) => emit(state.copyWith(logsStatus: NotificationLogsStatus.loaded, logs: logs)),
+      (logs) {
+        _logsOffset = logs.length;
+        emit(state.copyWith(
+          logsStatus: NotificationLogsStatus.loaded,
+          logs: logs,
+          logsHasMore: logs.length == _logsPageSize,
+        ));
+      },
+    );
+  }
+
+  Future<void> _onLogListLoadMoreRequested(
+    NotificationLogListLoadMoreRequested event,
+    Emitter<NotificationState> emit,
+  ) async {
+    if (!state.logsHasMore ||
+        state.logsStatus == NotificationLogsStatus.loading) return;
+    emit(state.copyWith(
+        logsStatus: NotificationLogsStatus.loading, clearLogsFailure: true));
+    final result = await listLogsUseCase(
+      ListNotificationLogsParams(limit: _logsPageSize, offset: _logsOffset),
+    );
+    result.fold(
+      (exception) => emit(state.copyWith(
+        logsStatus: NotificationLogsStatus.error,
+        logsFailure: Failure.fromException(exception),
+      )),
+      (nextPage) {
+        _logsOffset += nextPage.length;
+        emit(state.copyWith(
+          logsStatus: NotificationLogsStatus.loaded,
+          logs: [...state.logs, ...nextPage],
+          logsHasMore: nextPage.length == _logsPageSize,
+        ));
+      },
     );
   }
 
@@ -306,11 +366,14 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> {
         break;
       case NotificationTemplateEventType.updated:
         emit(state.copyWith(templates: [
-          for (final t in state.templates) if (t.id == template.id) template else t,
+          for (final t in state.templates)
+            if (t.id == template.id) template else t,
         ]));
         break;
       case NotificationTemplateEventType.deleted:
-        emit(state.copyWith(templates: state.templates.where((t) => t.id != template.id).toList()));
+        emit(state.copyWith(
+            templates:
+                state.templates.where((t) => t.id != template.id).toList()));
         break;
     }
   }

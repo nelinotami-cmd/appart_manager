@@ -12,7 +12,6 @@ import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/widgets/inline_alert.dart';
 import '../../../auth/domain/entities/user_role.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
-import '../../../auth/presentation/bloc/auth_state.dart';
 import '../../domain/entities/notification_channel.dart';
 import '../../domain/entities/notification_log.dart';
 import '../../domain/entities/notification_template.dart';

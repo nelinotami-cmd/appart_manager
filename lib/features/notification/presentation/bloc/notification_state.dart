@@ -6,9 +6,13 @@ import '../../domain/entities/notification_preferences.dart';
 import '../../domain/entities/notification_template.dart';
 
 enum NotificationDetailStatus { initial, loading, loaded, error }
+
 enum NotificationListStatus { initial, loading, loaded, error }
+
 enum NotificationLogsStatus { initial, loading, loaded, error }
+
 enum NotificationSendTestStatus { initial, sending, sent, error }
+
 enum NotificationPreferencesStatus { initial, loading, loaded, saving, error }
 
 class NotificationState extends Equatable {
@@ -23,6 +27,7 @@ class NotificationState extends Equatable {
   final NotificationLogsStatus logsStatus;
   final List<NotificationLog> logs;
   final Failure? logsFailure;
+  final bool logsHasMore;
 
   final NotificationSendTestStatus sendTestStatus;
   final Failure? sendTestFailure;
@@ -41,6 +46,7 @@ class NotificationState extends Equatable {
     this.logsStatus = NotificationLogsStatus.initial,
     this.logs = const [],
     this.logsFailure,
+    this.logsHasMore = true,
     this.sendTestStatus = NotificationSendTestStatus.initial,
     this.sendTestFailure,
     this.preferencesStatus = NotificationPreferencesStatus.initial,
@@ -63,6 +69,7 @@ class NotificationState extends Equatable {
     List<NotificationLog>? logs,
     Failure? logsFailure,
     bool clearLogsFailure = false,
+    bool? logsHasMore,
     NotificationSendTestStatus? sendTestStatus,
     Failure? sendTestFailure,
     bool clearSendTestFailure = false,
@@ -74,19 +81,24 @@ class NotificationState extends Equatable {
     return NotificationState(
       detailStatus: detailStatus ?? this.detailStatus,
       currentTemplate: currentTemplate ?? this.currentTemplate,
-      detailFailure: clearDetailFailure ? null : (detailFailure ?? this.detailFailure),
+      detailFailure:
+          clearDetailFailure ? null : (detailFailure ?? this.detailFailure),
       listStatus: listStatus ?? this.listStatus,
       templates: templates ?? this.templates,
       listFailure: clearListFailure ? null : (listFailure ?? this.listFailure),
       logsStatus: logsStatus ?? this.logsStatus,
       logs: logs ?? this.logs,
       logsFailure: clearLogsFailure ? null : (logsFailure ?? this.logsFailure),
+      logsHasMore: logsHasMore ?? this.logsHasMore,
       sendTestStatus: sendTestStatus ?? this.sendTestStatus,
-      sendTestFailure: clearSendTestFailure ? null : (sendTestFailure ?? this.sendTestFailure),
+      sendTestFailure: clearSendTestFailure
+          ? null
+          : (sendTestFailure ?? this.sendTestFailure),
       preferencesStatus: preferencesStatus ?? this.preferencesStatus,
       preferences: preferences ?? this.preferences,
-      preferencesFailure:
-          clearPreferencesFailure ? null : (preferencesFailure ?? this.preferencesFailure),
+      preferencesFailure: clearPreferencesFailure
+          ? null
+          : (preferencesFailure ?? this.preferencesFailure),
     );
   }
 
@@ -101,6 +113,7 @@ class NotificationState extends Equatable {
         logsStatus,
         logs,
         logsFailure,
+        logsHasMore,
         sendTestStatus,
         sendTestFailure,
         preferencesStatus,

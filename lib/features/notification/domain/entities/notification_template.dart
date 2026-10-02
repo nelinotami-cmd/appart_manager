@@ -10,6 +10,12 @@ import 'notification_channel.dart';
 /// to whichever feature actually triggers a send (5.8 Bookings, 5.10
 /// Taches), once those exist. A template here is just reusable content
 /// an Admin/Super Admin can compose ahead of time and reference later.
+///
+/// [message] may contain `{{placeholder}}` tokens (e.g. "Le paiement de
+/// {{amount}} est du le {{dueDate}}") - see
+/// `renderNotificationTemplate` for how these get filled in at send
+/// time. This entity itself never interprets or validates them; it's
+/// just text until something renders it.
 class NotificationTemplate extends Equatable {
   final String id;
   final String name;
