@@ -10,6 +10,7 @@ import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/widgets/inline_alert.dart';
 import '../../domain/entities/notification_channel.dart';
 import '../../domain/entities/notification_template.dart';
+import '../../domain/services/notification_template_renderer.dart';
 import '../bloc/notification_bloc.dart';
 import '../bloc/notification_event.dart';
 import '../bloc/notification_state.dart';
@@ -28,7 +29,8 @@ class ConfigureNotificationTemplatePage extends StatefulWidget {
       _ConfigureNotificationTemplatePageState();
 }
 
-class _ConfigureNotificationTemplatePageState extends State<ConfigureNotificationTemplatePage> {
+class _ConfigureNotificationTemplatePageState
+    extends State<ConfigureNotificationTemplatePage> {
   final _nameController = TextEditingController();
   final _messageController = TextEditingController();
   NotificationChannel _channel = NotificationChannel.email;
@@ -38,13 +40,16 @@ class _ConfigureNotificationTemplatePageState extends State<ConfigureNotificatio
 
   bool get _isEditing => widget.templateId != null;
 
+  List<String> get _currentPlaceholders =>
+      extractTemplatePlaceholders(_messageController.text);
+
   @override
   void initState() {
     super.initState();
     if (_isEditing) {
-      context
-          .read<NotificationBloc>()
-          .add(NotificationTemplateDetailLoadRequested(templateId: widget.templateId!));
+      context.read<NotificationBloc>().add(
+          NotificationTemplateDetailLoadRequested(
+              templateId: widget.templateId!));
     } else {
       _initialized = true;
     }
@@ -84,7 +89,8 @@ class _ConfigureNotificationTemplatePageState extends State<ConfigureNotificatio
       ));
     } else {
       bloc.add(
-        NotificationTemplateCreateRequested(name: name, message: message, channel: _channel),
+        NotificationTemplateCreateRequested(
+            name: name, message: message, channel: _channel),
       );
     }
     context.pop();
@@ -94,7 +100,8 @@ class _ConfigureNotificationTemplatePageState extends State<ConfigureNotificatio
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(title: Text(_isEditing ? 'Modifier le modele' : 'Nouveau modele')),
+      appBar: AppBar(
+          title: Text(_isEditing ? 'Modifier le modele' : 'Nouveau modele')),
       body: BlocBuilder<NotificationBloc, NotificationState>(
         buildWhen: (previous, current) =>
             previous.detailStatus != current.detailStatus ||
@@ -105,7 +112,8 @@ class _ConfigureNotificationTemplatePageState extends State<ConfigureNotificatio
                 state.currentTemplate == null) {
               return const Center(child: CircularProgressIndicator());
             }
-            if (state.currentTemplate != null) _populateFrom(state.currentTemplate!);
+            if (state.currentTemplate != null)
+              _populateFrom(state.currentTemplate!);
           }
 
           return SingleChildScrollView(
@@ -117,7 +125,8 @@ class _ConfigureNotificationTemplatePageState extends State<ConfigureNotificatio
                 children: [
                   if (_localError != null)
                     AppInlineAlert(message: _localError!)
-                  else if (state.detailStatus == NotificationDetailStatus.error &&
+                  else if (state.detailStatus ==
+                          NotificationDetailStatus.error &&
                       state.detailFailure != null)
                     AppInlineAlert(message: state.detailFailure!.message),
                   Container(
@@ -125,7 +134,8 @@ class _ConfigureNotificationTemplatePageState extends State<ConfigureNotificatio
                     decoration: BoxDecoration(
                       color: AppColors.surfaceContainerLowest,
                       borderRadius: BorderRadius.circular(AppRadius.large),
-                      border: Border.all(color: AppColors.surfaceContainerHighest),
+                      border:
+                          Border.all(color: AppColors.surfaceContainerHighest),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -141,7 +151,8 @@ class _ConfigureNotificationTemplatePageState extends State<ConfigureNotificatio
                         SegmentedButton<NotificationChannel>(
                           segments: [
                             for (final channel in NotificationChannel.values)
-                              ButtonSegment(value: channel, label: Text(channel.label)),
+                              ButtonSegment(
+                                  value: channel, label: Text(channel.label)),
                           ],
                           selected: {_channel},
                           onSelectionChanged: (selection) =>
@@ -150,10 +161,41 @@ class _ConfigureNotificationTemplatePageState extends State<ConfigureNotificatio
                         const SizedBox(height: AppSpacing.md),
                         AppTextField(
                           label: 'Message',
-                          hint: 'Contenu du modele...',
+                          hint:
+                              'Contenu du modele... Ex: Le paiement de {{amount}} '
+                              'est du le {{dueDate}}.',
                           controller: _messageController,
                           maxLines: 6,
+                          onChanged: (_) => setState(() {}),
                         ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Utilisez {{cle}} pour inserer une valeur fournie plus tard '
+                          '(date, montant, etc.) - la fonctionnalite qui enverra ce '
+                          "modele (reservations, taches...) definira les cles reelles "
+                          'disponibles.',
+                          style: AppTextStyles.bodySm,
+                        ),
+                        if (_currentPlaceholders.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              for (final placeholder in _currentPlaceholders)
+                                Chip(
+                                  visualDensity: VisualDensity.compact,
+                                  backgroundColor: AppColors.secondaryContainer,
+                                  label: Text(
+                                    '{{$placeholder}}',
+                                    style: AppTextStyles.labelSm.copyWith(
+                                      color: AppColors.onSecondaryContainer,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -172,7 +214,8 @@ class _ConfigureNotificationTemplatePageState extends State<ConfigureNotificatio
                         width: 200,
                         child: AppPrimaryButton(
                           label: 'Sauvegarder',
-                          isLoading: state.detailStatus == NotificationDetailStatus.loading,
+                          isLoading: state.detailStatus ==
+                              NotificationDetailStatus.loading,
                           onPressed: _save,
                         ),
                       ),

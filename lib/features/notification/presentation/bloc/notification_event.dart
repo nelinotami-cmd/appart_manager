@@ -84,11 +84,20 @@ class NotificationLogListLoadRequested extends NotificationEvent {
   const NotificationLogListLoadRequested();
 }
 
+/// Fetches the next page of logs and APPENDS to whatever's already
+/// loaded, rather than replacing it - used by both the main History tab
+/// and the app-bar bell panel's paginated scroll. A no-op if
+/// `NotificationState.logsHasMore` is already false.
+class NotificationLogListLoadMoreRequested extends NotificationEvent {
+  const NotificationLogListLoadMoreRequested();
+}
+
 class NotificationTestEmailSendRequested extends NotificationEvent {
   final String subject;
   final String message;
 
-  const NotificationTestEmailSendRequested({required this.subject, required this.message});
+  const NotificationTestEmailSendRequested(
+      {required this.subject, required this.message});
 
   @override
   List<Object?> get props => [subject, message];
@@ -101,7 +110,8 @@ class NotificationPreferencesLoadRequested extends NotificationEvent {
 class NotificationMutedTemplateIdsSetRequested extends NotificationEvent {
   final List<String> mutedTemplateIds;
 
-  const NotificationMutedTemplateIdsSetRequested({required this.mutedTemplateIds});
+  const NotificationMutedTemplateIdsSetRequested(
+      {required this.mutedTemplateIds});
 
   @override
   List<Object?> get props => [mutedTemplateIds];

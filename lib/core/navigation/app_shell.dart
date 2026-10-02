@@ -6,11 +6,13 @@ import '../../features/auth/domain/entities/user_role.dart';
 import '../../features/auth/presentation/bloc/auth_bloc.dart';
 import '../../features/auth/presentation/bloc/auth_event.dart';
 import '../../features/auth/presentation/bloc/auth_state.dart';
+import '../../features/notification/presentation/widgets/notification_bell_panel.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
 import '../theme/app_theme.dart';
 import 'app_destination.dart';
 import 'app_router.dart';
+import 'side_panel.dart';
 
 /// The app's single persistent navigation shell, hosting every major
 /// feature (cahier des charges 5.2-5.11) behind one sidebar, with
@@ -22,7 +24,7 @@ import 'app_router.dart';
 /// active destination's search behavior. Tapping a sidebar item calls
 /// `context.go(destination.path)` - the URL actually changes, so the
 /// browser's address bar, back/forward buttons, and refresh all reflect
-/// real app state now, which is the whole point of this rewrite.
+/// real app state.
 class AppShell extends StatefulWidget {
   final Widget child;
   final String currentLocation;
@@ -85,7 +87,11 @@ class _AppShellState extends State<AppShell> {
       icon: Icons.place_outlined,
       label: 'Localisations',
       path: AppRoutes.locations,
-      allowedRoles: {UserRole.admin, UserRole.superAdmin, UserRole.gestionnaire},
+      allowedRoles: {
+        UserRole.admin,
+        UserRole.superAdmin,
+        UserRole.gestionnaire
+      },
     ),
     AppDestination(
       id: 'gestionnaires',
@@ -132,7 +138,8 @@ class _AppShellState extends State<AppShell> {
     return destinations.first;
   }
 
-  void _onDestinationSelected(BuildContext context, AppDestination destination) {
+  void _onDestinationSelected(
+      BuildContext context, AppDestination destination) {
     widget.searchNotifier.value = '';
     _searchController.clear();
     context.go(destination.path);
@@ -163,6 +170,40 @@ class _AppShellState extends State<AppShell> {
     // `redirect` sends us to /login on its own.
   }
 
+  /// Bottom sheet on mobile, side panel on wide - matching the same
+  /// responsive rule `showSidePanel` itself already applies internally,
+  /// but the bell specifically needs a bottom sheet (not a full-screen
+  /// page) on mobile, so this doesn't just delegate to `showSidePanel`
+  /// for both cases.
+  void _openNotificationBell(BuildContext context, bool isWide) {
+    void seeAll() {
+      Navigator.of(context).pop();
+      context.go(AppRoutes.notifications);
+    }
+
+    if (isWide) {
+      showSidePanel(
+        context: context,
+        title: 'Notifications',
+        contentBuilder: (_) => NotificationBellPanel(onSeeAll: seeAll),
+      );
+      return;
+    }
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius:
+            BorderRadius.vertical(top: Radius.circular(AppRadius.large)),
+      ),
+      builder: (_) => FractionallySizedBox(
+        heightFactor: 0.75,
+        child: NotificationBellPanel(onSeeAll: seeAll),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -172,7 +213,8 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<AuthBloc, AuthState>(
-      buildWhen: (previous, current) => previous.currentUser?.role != current.currentUser?.role,
+      buildWhen: (previous, current) =>
+          previous.currentUser?.role != current.currentUser?.role,
       builder: (context, state) {
         final role = state.currentUser?.role;
         final destinations = _visibleDestinations(role);
@@ -208,17 +250,14 @@ class _AppShellState extends State<AppShell> {
               controller: _searchController,
               enabled: active.hasSearch,
               hint: active.searchHint ?? 'Recherche non disponible ici',
-              onChanged: (value) => setState(() => widget.searchNotifier.value = value),
+              onChanged: (value) =>
+                  setState(() => widget.searchNotifier.value = value),
             ),
             actions: [
               IconButton(
                 tooltip: 'Notifications',
                 icon: const Icon(Icons.notifications_none_rounded),
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Notifications (5.4) - pas encore construit.')),
-                  );
-                },
+                onPressed: () => _openNotificationBell(context, isWide),
               ),
               const SizedBox(width: 4),
               _ProfileMenu(onLogout: () => _logout(context)),
@@ -229,7 +268,8 @@ class _AppShellState extends State<AppShell> {
             children: [
               if (isWide) SizedBox(width: 260, child: sidebar),
               if (isWide)
-                const VerticalDivider(width: 1, color: AppColors.surfaceContainerHighest),
+                const VerticalDivider(
+                    width: 1, color: AppColors.surfaceContainerHighest),
               Expanded(child: widget.child),
             ],
           ),
@@ -317,26 +357,34 @@ class _SidebarItem extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Material(
-        color: selected ? AppColors.primaryContainer.withOpacity(0.10) : Colors.transparent,
+        color: selected
+            ? AppColors.primaryContainer.withOpacity(0.10)
+            : Colors.transparent,
         borderRadius: BorderRadius.circular(AppRadius.standard),
         child: InkWell(
           borderRadius: BorderRadius.circular(AppRadius.standard),
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 12),
+            padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.md, vertical: 12),
             child: Row(
               children: [
                 Icon(
                   icon,
                   size: 20,
-                  color: iconColor ?? (selected ? AppColors.primaryContainer : AppColors.outline),
+                  color: iconColor ??
+                      (selected
+                          ? AppColors.primaryContainer
+                          : AppColors.outline),
                 ),
                 const SizedBox(width: AppSpacing.md),
                 Text(
                   label,
                   style: AppTextStyles.bodySm.copyWith(
-                    color:
-                        iconColor ?? (selected ? AppColors.primaryContainer : AppColors.onSurface),
+                    color: iconColor ??
+                        (selected
+                            ? AppColors.primaryContainer
+                            : AppColors.onSurface),
                     fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
                   ),
                 ),
@@ -396,7 +444,8 @@ class _ProfileMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<AuthBloc, AuthState>(
-      buildWhen: (previous, current) => previous.currentUser != current.currentUser,
+      buildWhen: (previous, current) =>
+          previous.currentUser != current.currentUser,
       builder: (context, state) {
         final name = state.currentUser?.fullName ?? '';
         final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
