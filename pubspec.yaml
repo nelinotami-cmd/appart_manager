@@ -33,6 +33,6 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - .env.dev
-    - .env.preprod
-    - .env.prod
+    - env.dev
+    - env.preprod
+    - env.prod

@@ -33,9 +33,9 @@ class EnvConfig {
 
   static Future<void> load(AppFlavor flavor) async {
     final fileName = switch (flavor) {
-      AppFlavor.dev => '.env.dev',
-      AppFlavor.preprod => '.env.preprod',
-      AppFlavor.prod => '.env.prod',
+      AppFlavor.dev => 'env.dev',
+      AppFlavor.preprod => 'env.preprod',
+      AppFlavor.prod => 'env.prod',
     };
 
     await dotenv.load(fileName: fileName);
